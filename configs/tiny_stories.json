@@ -1,0 +1,55 @@
+{
+  "name": "tiny_stories_gpt2",
+  "seed": 42,
+  "device": "auto",
+  "model": {
+    "name": "transformer",
+    "extra_args": {
+      "d_model": 128,
+      "n_heads": 4,
+      "n_layers": 4
+    }
+  },
+  "data": {
+    "dataset_name": "tiny_stories",
+    "tokenizer_name": "gpt2",
+    "max_seq_len": 256,
+    "batch_size": 32,
+    "num_workers": 0,
+    "max_eval_batches": 50
+  },
+  "optimizer": {
+    "name": "adamw",
+    "lr": 0.0003,
+    "weight_decay": 0.1,
+    "beta1": 0.9,
+    "beta2": 0.95,
+    "eps": 1e-8,
+    "grad_clip_norm": 1.0
+  },
+  "scheduler": {
+    "name": "cosine_with_warmup",
+    "warmup_steps": 100,
+    "min_lr_ratio": 0.1
+  },
+  "training": {
+    "max_steps": 10000,
+    "eval_interval": 500,
+    "log_interval": 10,
+    "save_interval": 1000,
+    "gradient_accumulation_steps": 1,
+    "mixed_precision": false,
+    "compile_model": false
+  },
+  "checkpoint": {
+    "save_dir": "checkpoints",
+    "keep_last_n": 3,
+    "save_best": true,
+    "best_metric": "val/loss",
+    "best_mode": "min"
+  },
+  "logging": {
+    "db_path": "smallest_llm.db",
+    "console_interval": 10
+  }
+}

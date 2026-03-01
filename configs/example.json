@@ -1,0 +1,56 @@
+{
+  "name": "default",
+  "seed": 42,
+  "device": "auto",
+  "model": {
+    "name": "transformer",
+    "extra_args": {}
+  },
+  "data": {
+    "dataset_name": "tiny_shakespeare",
+    "tokenizer_name": "char",
+    "max_seq_len": 256,
+    "batch_size": 64,
+    "num_workers": 0,
+    "train_split": 0.9,
+    "val_split": 0.05,
+    "test_split": 0.05
+  },
+  "optimizer": {
+    "name": "adamw",
+    "lr": 0.0003,
+    "weight_decay": 0.1,
+    "beta1": 0.9,
+    "beta2": 0.95,
+    "eps": 1e-8,
+    "grad_clip_norm": 1.0
+  },
+  "scheduler": {
+    "name": "cosine_with_warmup",
+    "warmup_steps": 100,
+    "min_lr_ratio": 0.1
+  },
+  "training": {
+    "max_steps": 10000,
+    "eval_interval": 500,
+    "log_interval": 10,
+    "save_interval": 1000,
+    "gradient_accumulation_steps": 1,
+    "mixed_precision": false,
+    "compile_model": false
+  },
+  "checkpoint": {
+    "save_dir": "checkpoints",
+    "keep_last_n": 3,
+    "save_best": true,
+    "best_metric": "val/loss",
+    "best_mode": "min"
+  },
+  "logging": {
+    "log_dir": "logs",
+    "use_tensorboard": true,
+    "use_wandb": false,
+    "wandb_project": "smallest-llm",
+    "console_interval": 10
+  }
+}
