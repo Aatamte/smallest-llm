@@ -1,26 +1,17 @@
 import { useEffect, useState } from "react";
-import { useAtomValue, useSetAtom } from "jotai";
-import { statusAtom, activeRunIdAtom, resetAtom, subPageAtom } from "../storage";
+import { useAtomValue, useAtom, useSetAtom } from "jotai";
+import { statusAtom, activeRunIdAtom, availableRunsAtom, resetAtom, subPageAtom } from "../storage";
 import { navigateTo } from "../storage/atoms/uiAtoms";
-import { startRun, fetchConfig, fetchRuns, fetchPresets, fetchPreset } from "../api/client";
+import { startRun, deleteRun, bulkDeleteRuns, fetchConfig, fetchRuns, fetchPresets, fetchPreset } from "../api/client";
 import { RunPage } from "../components/RunPage";
-
-interface Run {
-  id: number;
-  name: string;
-  status: string;
-  created_at: string;
-}
 
 export function RunContainer() {
   const sub = useAtomValue(subPageAtom);
   const status = useAtomValue(statusAtom);
-  const setActiveRunId = useSetAtom(activeRunIdAtom);
+  const [activeRunId, setActiveRunId] = useAtom(activeRunIdAtom);
   const setStatus = useSetAtom(statusAtom);
   const reset = useSetAtom(resetAtom);
-
-  // Run list state
-  const [runs, setRuns] = useState<Run[]>([]);
+  const [runs, setRuns] = useAtom(availableRunsAtom);
 
   // New run state
   const [config, setConfig] = useState<Record<string, unknown> | null>(null);
@@ -33,7 +24,7 @@ export function RunContainer() {
     if (sub !== "new") {
       fetchRuns().then(setRuns).catch((e) => console.warn("Failed to fetch runs:", e));
     }
-  }, [sub]);
+  }, [sub, setRuns]);
 
   useEffect(() => {
     if (sub === "new") {
@@ -45,6 +36,31 @@ export function RunContainer() {
   function selectRun(id: number) {
     setActiveRunId(id);
     navigateTo("metrics");
+  }
+
+  async function handleDeleteRun(id: number) {
+    try {
+      await deleteRun(id);
+      setRuns(runs.filter((r) => r.id !== id));
+      if (activeRunId === id) {
+        setActiveRunId(null);
+      }
+    } catch (err) {
+      console.warn("Failed to delete run:", err);
+    }
+  }
+
+  async function handleBulkDelete(ids: number[]) {
+    try {
+      await bulkDeleteRuns(ids);
+      const idSet = new Set(ids);
+      setRuns(runs.filter((r) => !idSet.has(r.id)));
+      if (activeRunId != null && idSet.has(activeRunId)) {
+        setActiveRunId(null);
+      }
+    } catch (err) {
+      console.warn("Failed to bulk delete runs:", err);
+    }
   }
 
   function handlePresetChange(name: string) {
@@ -96,6 +112,8 @@ export function RunContainer() {
       starting={starting}
       error={error}
       onStart={handleStart}
+      onDeleteRun={handleDeleteRun}
+      onBulkDelete={handleBulkDelete}
     />
   );
 }

@@ -1,5 +1,5 @@
 import { atom } from "jotai";
-import type { StepMetrics, LayerStat, Generation, TrainingStatus, LogEntry } from "../../types/metrics";
+import type { StepMetrics, LayerStat, ActivationStat, Generation, TrainingStatus, LogEntry } from "../../types/metrics";
 import { persistAtom } from "../persist";
 
 export type ConnectionStatus = "connected" | "reconnecting" | "disconnected";
@@ -14,10 +14,13 @@ export const connectionStatusAtom = atom<ConnectionStatus>("disconnected");
 export const activeRunIdAtom = persistAtom<number | null>("sllm:activeRunId", null);
 export const experimentNameAtom = atom("smallest-llm");
 export const maxStepsAtom = atom(10000);
-export const startTimeAtom = atom(Date.now());
+export const startTimeAtom = persistAtom<number>("sllm:startTime", Date.now());
+export const hydratingAtom = atom(false);
 export const layerStatsAtom = atom<LayerStat[]>([]);
+export const activationStatsAtom = atom<ActivationStat[]>([]);
 export const generationsAtom = atom<Generation[]>([]);
 export const logsAtom = atom<LogEntry[]>([]);
+export const tokensPerStepAtom = atom(0);
 
 // ── Incremental tracking atoms ──────────────────────────
 // These avoid O(n) scans over the full steps array.
@@ -42,6 +45,18 @@ export interface CheckpointInfo {
 }
 export const availableCheckpointsAtom = atom<CheckpointInfo[]>([]);
 export const activeCheckpointIdAtom = persistAtom<number | null>("sllm:activeCheckpointId", null);
+
+export interface EvalResultInfo {
+  id: number;
+  run_id: number;
+  step: number;
+  task: string;
+  metrics: Record<string, number>;
+  metadata: Record<string, unknown>;
+  model_name: string | null;
+  created_at: string;
+}
+export const evalsAtom = atom<EvalResultInfo[]>([]);
 
 // ── Derived atoms (computed from stepsAtom) ─────────────
 
@@ -135,12 +150,16 @@ export const clearLogsAtom = atom(null, (_get, set) => {
 export const resetAtom = atom(null, (_get, set) => {
   set(stepsAtom, []);
   set(statusAtom, "idle");
+  set(hydratingAtom, false);
   set(layerStatsAtom, []);
+  set(activationStatsAtom, []);
   set(generationsAtom, []);
   set(logsAtom, []);
+  set(evalsAtom, []);
   set(startTimeAtom, Date.now());
   set(connectionStatusAtom, "disconnected");
   set(activeRunIdAtom, null);
+  set(tokensPerStepAtom, 0);
   set(_bestValLossAtom, Infinity);
   set(_lastValLossAtom, 0);
 });

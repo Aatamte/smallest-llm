@@ -134,6 +134,16 @@ class RunManager:
 
         return True
 
+    # ── Delete ──────────────────────────────────────────────
+
+    def delete(self, run_id: int):
+        """Delete a run and all its data. Stops it first if active."""
+        with self._lock:
+            is_active = self._active_run_id == run_id
+        if is_active:
+            self.stop(run_id)
+        self.db.delete_run(run_id)
+
     # ── Lifecycle ──────────────────────────────────────────
 
     def recover_stale(self) -> list[int]:

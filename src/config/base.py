@@ -74,6 +74,12 @@ class LoggingConfig:
 
 
 @dataclass
+class MonitoringConfig:
+    activation_stats: bool = True
+    log_interval: int = 50
+
+
+@dataclass
 class ExperimentConfig:
     """Top-level config that composes everything."""
     name: str = "default"
@@ -87,6 +93,7 @@ class ExperimentConfig:
     training: TrainingConfig = field(default_factory=TrainingConfig)
     checkpoint: CheckpointConfig = field(default_factory=CheckpointConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    monitoring: MonitoringConfig = field(default_factory=MonitoringConfig)
     eval: EvalConfig = field(default_factory=EvalConfig)
 
     def to_dict(self) -> dict:
@@ -107,6 +114,7 @@ class ExperimentConfig:
             "training": TrainingConfig,
             "checkpoint": CheckpointConfig,
             "logging": LoggingConfig,
+            "monitoring": MonitoringConfig,
             "eval": EvalConfig,
         }
         kwargs = {}

@@ -29,6 +29,8 @@ class Trainer:
         scheduler,
         logger: Logger | None = None,
         callbacks: list | None = None,
+        db=None,
+        run_id: int | None = None,
     ):
         self.config = config
         self.model = model
@@ -41,7 +43,7 @@ class Trainer:
 
         self.device = resolve_device(config.device)
         self.checkpoint_manager = CheckpointManager(
-            config.checkpoint, config
+            config.checkpoint, config, db=db, run_id=run_id,
         )
 
         self.start_step = 0
@@ -99,6 +101,10 @@ class Trainer:
 
             self.optimizer.step()
             self.scheduler.step()
+
+            # --- Callbacks (before zero_grad so gradients are still available) ---
+            self._fire_callback("on_step_end", step=step)
+
             self.optimizer.zero_grad(set_to_none=True)
 
             dt = time.perf_counter() - t0
@@ -130,8 +136,6 @@ class Trainer:
                         step, self.model, self.optimizer, self.scheduler,
                         val_metrics, self.tokens_seen,
                     )
-
-            self._fire_callback("on_step_end", step=step)
 
         self._fire_callback("on_train_end")
         if self.logger:

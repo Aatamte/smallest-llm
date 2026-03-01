@@ -18,6 +18,22 @@ export async function stopRun(runId: number): Promise<{ status: string; run_id: 
   return res.json();
 }
 
+export async function deleteRun(runId: number): Promise<{ status: string; run_id: number }> {
+  const res = await fetch(`${API_BASE}/runs/${runId}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`Failed to delete run: ${res.status}`);
+  return res.json();
+}
+
+export async function bulkDeleteRuns(runIds: number[]): Promise<{ status: string; run_ids: number[] }> {
+  const res = await fetch(`${API_BASE}/runs/bulk-delete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ run_ids: runIds }),
+  });
+  if (!res.ok) throw new Error(`Failed to bulk delete runs: ${res.status}`);
+  return res.json();
+}
+
 export async function fetchConfig(): Promise<Record<string, unknown>> {
   const res = await fetch(`${API_BASE}/config`);
   if (!res.ok) throw new Error(`Failed to fetch config: ${res.status}`);
@@ -146,5 +162,48 @@ export async function fetchAllEvals(modelName?: string): Promise<EvalResult[]> {
 export async function fetchEvalModels(): Promise<string[]> {
   const res = await fetch(`${API_BASE}/evals/models`);
   if (!res.ok) throw new Error(`Failed to fetch eval models: ${res.status}`);
+  return res.json();
+}
+
+// ── HF Model Evaluation ─────────────────────────────────
+
+export interface AvailableModel {
+  name: string;
+  hf_id: string;
+}
+
+export interface EvalStatus {
+  status: "idle" | "running" | "error";
+  model_name: string | null;
+  task: string | null;
+  error: string | null;
+}
+
+export async function fetchAvailableModels(): Promise<AvailableModel[]> {
+  const res = await fetch(`${API_BASE}/evals/available-models`);
+  if (!res.ok) throw new Error(`Failed to fetch available models: ${res.status}`);
+  return res.json();
+}
+
+export async function runEval(
+  modelName: string,
+  tasks: string[],
+  maxSamples?: number,
+): Promise<{ status: string; model_name: string; tasks: string[] }> {
+  const res = await fetch(`${API_BASE}/evals/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model_name: modelName, tasks, max_samples: maxSamples ?? null }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `Failed to start eval: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function fetchEvalStatus(): Promise<EvalStatus> {
+  const res = await fetch(`${API_BASE}/evals/status`);
+  if (!res.ok) throw new Error(`Failed to fetch eval status: ${res.status}`);
   return res.json();
 }

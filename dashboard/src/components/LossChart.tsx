@@ -11,15 +11,19 @@ export interface LossChartProps {
 }
 
 export function LossChart({ initialX, initialTrain, initialVal, onDataRef }: LossChartProps) {
+  const wrapRef = useRef<HTMLDivElement>(null);
   const divRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<uPlot | null>(null);
 
   useEffect(() => {
+    const wrap = wrapRef.current;
     const el = divRef.current;
-    if (!el) return;
+    if (!wrap || !el) return;
+
+    const w = wrap.clientWidth;
 
     const plot = new uPlot({
-      ...baseOpts(800, 400),
+      ...baseOpts(w, 350),
       series: [
         {},
         { label: "Train", stroke: CHART_COLORS.trainLoss, width: 2 },
@@ -33,7 +37,16 @@ export function LossChart({ initialX, initialTrain, initialVal, onDataRef }: Los
       plotRef.current?.setData([x, train, val]);
     };
 
+    const ro = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry && plotRef.current) {
+        plotRef.current.setSize({ width: entry.contentRect.width, height: 350 });
+      }
+    });
+    ro.observe(wrap);
+
     return () => {
+      ro.disconnect();
       plot.destroy();
       plotRef.current = null;
       onDataRef.current = null;
@@ -41,7 +54,7 @@ export function LossChart({ initialX, initialTrain, initialVal, onDataRef }: Los
   }, []);
 
   return (
-    <div className="panel">
+    <div className="panel" ref={wrapRef}>
       <h3 className="panel-title">Loss</h3>
       <div ref={divRef} />
     </div>

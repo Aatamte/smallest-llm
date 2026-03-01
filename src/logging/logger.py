@@ -58,6 +58,14 @@ class Logger:
                 "data": layer_stats,
             })
 
+    def broadcast_activations(self, stats: list[dict]):
+        """Broadcast per-layer activation stats to dashboard."""
+        if self._broadcaster is not None:
+            self._broadcaster.publish({
+                "type": "activations",
+                "data": stats,
+            })
+
     def broadcast_generation(self, step: int, prompt: str, output: str):
         """Broadcast a sample generation to dashboard."""
         if self._broadcaster is not None:

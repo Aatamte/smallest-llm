@@ -96,6 +96,11 @@ class EvalDatabase:
         ).fetchall()
         return [r["model_name"] for r in rows]
 
+    def delete_by_run(self, run_id: int):
+        """Delete all eval results for a given run_id."""
+        self._conn.execute("DELETE FROM eval_results WHERE run_id = ?", (run_id,))
+        self._conn.commit()
+
     def close(self):
         self._conn.close()
 

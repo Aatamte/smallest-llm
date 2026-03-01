@@ -1,35 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
-import type { EvalResult } from "../api/client";
+import type { EvalResultInfo } from "../storage";
+import type { AvailableModel, EvalStatus } from "../api/client";
 import { CHART_COLORS, baseOpts } from "../types/chart";
-
-// ── Hardcoded baseline summary metrics ──────────────────
-
-const BASELINES: Record<string, Record<string, Record<string, number>>> = {
-  "smollm-135m": {
-    perplexity: { perplexity: 1119.08, bpc: 3.6172, cross_entropy_nats: 7.0203 },
-    blimp: {
-      accuracy: 0.8149,
-      accuracy_morphology: 0.9333,
-      accuracy_semantics: 0.8667,
-      accuracy_syntax: 0.7154,
-      accuracy_syntax_semantics: 0.8143,
-    },
-  },
-  "qwen2.5-0.5b": {
-    perplexity: { perplexity: 2408.19, bpc: 4.012, cross_entropy_nats: 7.787 },
-    blimp: {
-      accuracy: 0.7761,
-      accuracy_morphology: 0.8889,
-      accuracy_semantics: 0.7778,
-      accuracy_syntax: 0.6923,
-      accuracy_syntax_semantics: 0.7571,
-    },
-  },
-};
-
-const BASELINE_NAMES = Object.keys(BASELINES);
 
 // ── Helpers ─────────────────────────────────────────────
 
@@ -53,10 +27,117 @@ function CompareValue({
   );
 }
 
+// ── Eval Controls ───────────────────────────────────────
+
+const AVAILABLE_TASKS = ["perplexity", "blimp", "lambada"];
+
+function EvalControls({
+  availableModels,
+  evalStatus,
+  onRunEval,
+}: {
+  availableModels: AvailableModel[];
+  evalStatus: EvalStatus;
+  onRunEval: (modelName: string, tasks: string[]) => void;
+}) {
+  const [selectedModel, setSelectedModel] = useState("");
+  const [selectedTasks, setSelectedTasks] = useState<Set<string>>(
+    new Set(["perplexity", "blimp"]),
+  );
+
+  const isRunning = evalStatus.status === "running";
+
+  const toggleTask = (task: string) => {
+    setSelectedTasks((prev) => {
+      const next = new Set(prev);
+      if (next.has(task)) next.delete(task);
+      else next.add(task);
+      return next;
+    });
+  };
+
+  const handleRun = () => {
+    if (!selectedModel || selectedTasks.size === 0) return;
+    onRunEval(selectedModel, [...selectedTasks]);
+  };
+
+  return (
+    <div className="panel">
+      <h3 className="panel-title">Run Baseline Evaluation</h3>
+      <div className="eval-controls">
+        <div className="eval-controls-row">
+          <label className="eval-control-label">Model</label>
+          <select
+            className="eval-select"
+            value={selectedModel}
+            onChange={(e) => setSelectedModel(e.target.value)}
+            disabled={isRunning}
+          >
+            <option value="">Select a model...</option>
+            {availableModels.map((m) => (
+              <option key={m.name} value={m.name}>
+                {m.name} ({m.hf_id})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="eval-controls-row">
+          <label className="eval-control-label">Tasks</label>
+          <div className="eval-task-checkboxes">
+            {AVAILABLE_TASKS.map((task) => (
+              <label key={task} className="eval-checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={selectedTasks.has(task)}
+                  onChange={() => toggleTask(task)}
+                  disabled={isRunning}
+                />
+                {task}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="eval-controls-row">
+          <button
+            className="eval-run-btn"
+            onClick={handleRun}
+            disabled={isRunning || !selectedModel || selectedTasks.size === 0}
+          >
+            {isRunning ? "Running..." : "Run Eval"}
+          </button>
+          {isRunning && evalStatus.model_name && (
+            <span className="eval-status-text">
+              Evaluating <strong>{evalStatus.model_name}</strong>
+              {evalStatus.task && (
+                <>
+                  {" "}
+                  — task: <strong>{evalStatus.task}</strong>
+                </>
+              )}
+            </span>
+          )}
+          {evalStatus.status === "error" && evalStatus.error && (
+            <span className="eval-status-text eval-error-text">
+              Error: {evalStatus.error}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Perplexity Panel ────────────────────────────────────
 
-function PerplexityPanel({ latest }: { latest: EvalResult | undefined }) {
+function PerplexityPanel({
+  latest,
+  baselines,
+}: {
+  latest: EvalResultInfo | undefined;
+  baselines: Record<string, Record<string, Record<string, number>>>;
+}) {
   const metrics = latest?.metrics;
+  const baselineNames = Object.keys(baselines);
 
   return (
     <div className="panel">
@@ -81,23 +162,29 @@ function PerplexityPanel({ latest }: { latest: EvalResult | undefined }) {
               <div className="metric-sub">bits/char</div>
             </div>
           </div>
-          <div className="eval-comparison-row">
-            {BASELINE_NAMES.map((name) => {
-              const b = BASELINES[name]?.perplexity;
-              if (!b) return null;
-              return (
-                <div key={name} className="eval-baseline">
-                  <span className="eval-baseline-name">{name}</span>
-                  <span className="eval-baseline-value">
-                    ppl={b.perplexity.toFixed(1)}
-                  </span>
-                  <span className="eval-baseline-value">
-                    bpc={b.bpc.toFixed(3)}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+          {baselineNames.length > 0 && (
+            <div className="eval-comparison-row">
+              {baselineNames.map((name) => {
+                const b = baselines[name]?.perplexity;
+                if (!b) return null;
+                return (
+                  <div key={name} className="eval-baseline">
+                    <span className="eval-baseline-name">{name}</span>
+                    {b.perplexity != null && (
+                      <span className="eval-baseline-value">
+                        ppl={b.perplexity.toFixed(1)}
+                      </span>
+                    )}
+                    {b.bpc != null && (
+                      <span className="eval-baseline-value">
+                        bpc={b.bpc.toFixed(3)}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </>
       )}
     </div>
@@ -114,8 +201,15 @@ const BLIMP_CATEGORIES = [
   { key: "accuracy_syntax_semantics", label: "Syntax-Semantics" },
 ];
 
-function BlimpPanel({ latest }: { latest: EvalResult | undefined }) {
+function BlimpPanel({
+  latest,
+  baselines,
+}: {
+  latest: EvalResultInfo | undefined;
+  baselines: Record<string, Record<string, Record<string, number>>>;
+}) {
   const metrics = latest?.metrics;
+  const baselineNames = Object.keys(baselines);
 
   return (
     <div className="panel">
@@ -127,7 +221,7 @@ function BlimpPanel({ latest }: { latest: EvalResult | undefined }) {
           <div className="eval-table-header">
             <span>Category</span>
             <span>Your Model</span>
-            {BASELINE_NAMES.map((n) => (
+            {baselineNames.map((n) => (
               <span key={n}>{n}</span>
             ))}
           </div>
@@ -139,8 +233,8 @@ function BlimpPanel({ latest }: { latest: EvalResult | undefined }) {
                   ? (metrics[key] * 100).toFixed(1) + "%"
                   : "—"}
               </span>
-              {BASELINE_NAMES.map((name) => {
-                const bVal = BASELINES[name]?.blimp?.[key];
+              {baselineNames.map((name) => {
+                const bVal = baselines[name]?.blimp?.[key];
                 return (
                   <CompareValue
                     key={name}
@@ -163,7 +257,7 @@ function BlimpPanel({ latest }: { latest: EvalResult | undefined }) {
 
 // ── Eval Over Steps Chart ───────────────────────────────
 
-function EvalChart({ evals }: { evals: EvalResult[] }) {
+function EvalChart({ evals }: { evals: EvalResultInfo[] }) {
   const divRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<uPlot | null>(null);
 
@@ -268,16 +362,33 @@ function EvalChart({ evals }: { evals: EvalResult[] }) {
 // ── Main Page ───────────────────────────────────────────
 
 export interface EvalPageProps {
-  latestPerplexity: EvalResult | undefined;
-  latestBlimp: EvalResult | undefined;
-  evals: EvalResult[];
+  latestPerplexity: EvalResultInfo | undefined;
+  latestBlimp: EvalResultInfo | undefined;
+  evals: EvalResultInfo[];
+  availableModels: AvailableModel[];
+  evalStatus: EvalStatus;
+  baselineEvals: Record<string, Record<string, Record<string, number>>>;
+  onRunEval: (modelName: string, tasks: string[]) => void;
 }
 
-export function EvalPage({ latestPerplexity, latestBlimp, evals }: EvalPageProps) {
+export function EvalPage({
+  latestPerplexity,
+  latestBlimp,
+  evals,
+  availableModels,
+  evalStatus,
+  baselineEvals,
+  onRunEval,
+}: EvalPageProps) {
   return (
     <main className="eval-layout">
-      <PerplexityPanel latest={latestPerplexity} />
-      <BlimpPanel latest={latestBlimp} />
+      <EvalControls
+        availableModels={availableModels}
+        evalStatus={evalStatus}
+        onRunEval={onRunEval}
+      />
+      <PerplexityPanel latest={latestPerplexity} baselines={baselineEvals} />
+      <BlimpPanel latest={latestBlimp} baselines={baselineEvals} />
       <EvalChart evals={evals} />
     </main>
   );

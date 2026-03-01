@@ -1,12 +1,7 @@
+import { useState } from "react";
 import { navigateTo } from "../storage/atoms/uiAtoms";
 import type { TrainingStatus } from "../types/metrics";
-
-interface Run {
-  id: number;
-  name: string;
-  status: string;
-  created_at: string;
-}
+import type { RunInfo } from "../storage";
 
 const STATUS_COLORS: Record<string, string> = {
   running: "#22c55e",
@@ -19,14 +14,51 @@ const STATUS_COLORS: Record<string, string> = {
 function RunList({
   runs,
   onSelectRun,
+  onDeleteRun,
+  onBulkDelete,
 }: {
-  runs: Run[];
+  runs: RunInfo[];
   onSelectRun: (id: number) => void;
+  onDeleteRun: (id: number) => void;
+  onBulkDelete: (ids: number[]) => void;
 }) {
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+
+  function toggleOne(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    if (selected.size === runs.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(runs.map((r) => r.id)));
+    }
+  }
+
+  function handleBulkDelete() {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    if (!window.confirm(`Delete ${ids.length} run(s)? This cannot be undone.`)) return;
+    onBulkDelete(ids);
+    setSelected(new Set());
+  }
+
   return (
     <main className="runs-layout">
       <div className="runs-header-row">
         <h3 className="panel-title" style={{ marginBottom: 0 }}>Runs</h3>
+        {selected.size > 0 && (
+          <button className="run-bulk-delete-btn" onClick={handleBulkDelete}>
+            Delete {selected.size} selected
+          </button>
+        )}
+        <div style={{ flex: 1 }} />
         <button className="run-new-btn" onClick={() => navigateTo("runs", "new")}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -35,37 +67,76 @@ function RunList({
         </button>
       </div>
 
-      <div className="panel" style={{ flex: 1 }}>
+      <div className="panel">
         {runs.length === 0 ? (
           <div className="panel-empty">No runs yet. Start one!</div>
         ) : (
-          <div className="runs-list">
-            {runs
-              .slice()
-              .reverse()
-              .map((run) => (
-                <button
-                  className="run-item run-item-clickable"
-                  key={run.id}
-                  onClick={() => onSelectRun(run.id)}
-                >
-                  <div className="run-item-left">
-                    <span
-                      className="run-status-dot"
-                      style={{ backgroundColor: STATUS_COLORS[run.status] ?? "#6b7280" }}
+          <>
+            {runs.length > 1 && (
+              <div className="runs-select-all">
+                <label className="run-checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={selected.size === runs.length}
+                    onChange={toggleAll}
+                  />
+                  Select all
+                </label>
+              </div>
+            )}
+            <div className="runs-list">
+              {runs
+                .slice()
+                .reverse()
+                .map((run) => (
+                  <div className="run-item-row" key={run.id}>
+                    <input
+                      type="checkbox"
+                      className="run-checkbox"
+                      checked={selected.has(run.id)}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        toggleOne(run.id);
+                      }}
                     />
-                    <span className="run-item-name">{run.name}</span>
-                    <span className="run-item-id">#{run.id}</span>
+                    <button
+                      className="run-item run-item-clickable"
+                      onClick={() => onSelectRun(run.id)}
+                    >
+                      <div className="run-item-left">
+                        <span
+                          className="run-status-dot"
+                          style={{ backgroundColor: STATUS_COLORS[run.status] ?? "#6b7280" }}
+                        />
+                        <span className="run-item-name">{run.name}</span>
+                        <span className="run-item-id">#{run.id}</span>
+                      </div>
+                      <div className="run-item-right">
+                        <span className="run-item-status">{run.status}</span>
+                        <span className="run-item-date">
+                          {new Date(run.created_at).toLocaleString()}
+                        </span>
+                        <button
+                          className="run-delete-btn"
+                          title="Delete run"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (window.confirm(`Delete run #${run.id} "${run.name}"? This cannot be undone.`)) {
+                              onDeleteRun(run.id);
+                            }
+                          }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                          </svg>
+                        </button>
+                      </div>
+                    </button>
                   </div>
-                  <div className="run-item-right">
-                    <span className="run-item-status">{run.status}</span>
-                    <span className="run-item-date">
-                      {new Date(run.created_at).toLocaleString()}
-                    </span>
-                  </div>
-                </button>
-              ))}
-          </div>
+                ))}
+            </div>
+          </>
         )}
       </div>
     </main>
@@ -201,7 +272,7 @@ function NewRunPage({
         </div>
       </div>
 
-      <div className="panel" style={{ flex: 1 }}>
+      <div className="panel">
         <div className="preset-selector-row">
           <h3 className="panel-title" style={{ marginBottom: 0 }}>Configuration</h3>
           {presets.length > 0 && (
@@ -246,8 +317,10 @@ function NewRunPage({
 
 export interface RunPageProps {
   sub: string | null;
-  runs: Run[];
+  runs: RunInfo[];
   onSelectRun: (id: number) => void;
+  onDeleteRun: (id: number) => void;
+  onBulkDelete: (ids: number[]) => void;
   status: TrainingStatus;
   config: Record<string, unknown> | null;
   presets: { name: string; label: string }[];
@@ -275,6 +348,6 @@ export function RunPage(props: RunPageProps) {
       onStart={props.onStart}
     />
   ) : (
-    <RunList runs={props.runs} onSelectRun={props.onSelectRun} />
+    <RunList runs={props.runs} onSelectRun={props.onSelectRun} onDeleteRun={props.onDeleteRun} onBulkDelete={props.onBulkDelete} />
   );
 }

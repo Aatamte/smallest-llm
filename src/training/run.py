@@ -15,6 +15,7 @@ from src.logging.logger import Logger
 from src.models.mamba import TinyMamba
 from src.models.tiny_transformer import TinyTransformer
 from src.storage.database import Database
+from src.training.callbacks import ActivationStatsCallback, LayerStatsCallback
 from src.training.optimizer import build_optimizer, build_scheduler
 from src.training.trainer import Trainer
 from src.utils.device import resolve_device
@@ -81,6 +82,10 @@ def build_trainer(
     if broadcaster:
         logger.broadcast_status("training")
 
+    callbacks = [LayerStatsCallback(log_interval=config.training.log_interval)]
+    if config.monitoring.activation_stats:
+        callbacks.append(ActivationStatsCallback(log_interval=config.monitoring.log_interval))
+
     trainer = Trainer(
         config=config,
         model=model,
@@ -89,6 +94,9 @@ def build_trainer(
         optimizer=optimizer,
         scheduler=scheduler,
         logger=logger,
+        callbacks=callbacks,
+        db=db,
+        run_id=run_id,
     )
 
     return trainer, run_id

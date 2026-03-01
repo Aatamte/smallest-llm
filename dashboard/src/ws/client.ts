@@ -1,4 +1,4 @@
-import type { StepMetrics, LayerStat, Generation, TrainingStatus, LogLevel } from "../types/metrics";
+import type { StepMetrics, LayerStat, ActivationStat, Generation, TrainingStatus, LogLevel } from "../types/metrics";
 import type { ConnectionStatus } from "../storage";
 
 export const WS_URL = `ws://${window.location.hostname}:8000/ws`;
@@ -6,6 +6,7 @@ export const WS_URL = `ws://${window.location.hostname}:8000/ws`;
 export interface WSHandlers {
   onStep: (data: StepMetrics) => void;
   onLayers: (data: LayerStat[]) => void;
+  onActivations: (data: ActivationStat[]) => void;
   onGeneration: (data: Generation) => void;
   onStatus: (data: TrainingStatus) => void;
   onLog: (data: { level: LogLevel; message: string }) => void;
@@ -39,6 +40,9 @@ export function createWebSocket(handlers: WSHandlers): () => void {
             break;
           case "layers":
             handlers.onLayers(msg.data as LayerStat[]);
+            break;
+          case "activations":
+            handlers.onActivations(msg.data as ActivationStat[]);
             break;
           case "generation":
             handlers.onGeneration(msg.data as Generation);

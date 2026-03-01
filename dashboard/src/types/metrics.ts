@@ -18,6 +18,15 @@ export interface LayerStat {
   updateRatio: number;
 }
 
+export interface ActivationStat {
+  name: string;
+  mean: number;
+  std: number;
+  max: number;
+  min: number;
+  pctZero: number;
+}
+
 export interface Generation {
   step: number;
   prompt: string;

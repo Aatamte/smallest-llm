@@ -227,6 +227,17 @@ class Database:
             ).fetchall()
             return [dict(r) for r in rows]
 
+    # ── Delete ────────────────────────────────────────────
+
+    def delete_run(self, run_id: int):
+        """Delete a run and all its associated data (metrics, evals, checkpoints)."""
+        with self._lock:
+            self._conn.execute("DELETE FROM metrics WHERE run_id = ?", (run_id,))
+            self._conn.execute("DELETE FROM eval_results WHERE run_id = ?", (run_id,))
+            self._conn.execute("DELETE FROM checkpoints WHERE run_id = ?", (run_id,))
+            self._conn.execute("DELETE FROM runs WHERE id = ?", (run_id,))
+            self._conn.commit()
+
     # ── Recovery ──────────────────────────────────────────
 
     def mark_stale_runs(self) -> list[int]:

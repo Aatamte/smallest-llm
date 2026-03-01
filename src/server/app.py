@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import threading
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -22,6 +23,16 @@ DB_PATH = "smallest_llm.db"
 EVAL_DB_PATH = "eval.db"
 run_manager = RunManager(DB_PATH, broadcaster)
 eval_db = EvalDatabase(EVAL_DB_PATH)
+
+# Known HF models available for evaluation
+EVAL_MODELS = {
+    "smollm-135m": "HuggingFaceTB/SmolLM-135M",
+    "qwen2.5-0.5b": "Qwen/Qwen2.5-0.5B",
+}
+
+# Eval job state (simple dict, protected by a lock)
+_eval_lock = threading.Lock()
+_eval_state: dict = {"status": "idle", "model_name": None, "task": None, "error": None}
 
 
 @asynccontextmanager
@@ -242,6 +253,100 @@ def stop_training_run(run_id: int):
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     return {"status": "stopped" if ok else "failed", "run_id": run_id}
+
+
+@app.delete("/api/runs/{run_id}")
+def delete_run(run_id: int):
+    """Delete a run and all its associated data."""
+    run_manager.delete(run_id)
+    eval_db.delete_by_run(run_id)
+    return {"status": "deleted", "run_id": run_id}
+
+
+@app.post("/api/runs/bulk-delete")
+async def bulk_delete_runs(request: Request):
+    """Delete multiple runs at once. Body: {"run_ids": [1, 2, 3]}"""
+    body = json.loads(await request.body())
+    run_ids = body.get("run_ids", [])
+    deleted = []
+    for rid in run_ids:
+        run_manager.delete(rid)
+        eval_db.delete_by_run(rid)
+        deleted.append(rid)
+    return {"status": "deleted", "run_ids": deleted}
+
+
+# ── HF Model Evaluation ──────────────────────────────────
+
+@app.get("/api/evals/available-models")
+def list_available_models():
+    """Return HF models that can be evaluated."""
+    return [{"name": name, "hf_id": hf_id} for name, hf_id in EVAL_MODELS.items()]
+
+
+@app.get("/api/evals/status")
+def get_eval_status():
+    """Return current eval job status."""
+    with _eval_lock:
+        return dict(_eval_state)
+
+
+@app.post("/api/evals/run")
+async def run_eval(request: Request):
+    """Start an HF model evaluation in a background thread."""
+    body = json.loads(await request.body())
+    model_name = body.get("model_name")
+    tasks = body.get("tasks", ["perplexity", "blimp"])
+    max_samples = body.get("max_samples")
+
+    if model_name not in EVAL_MODELS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown model: {model_name}. Available: {list(EVAL_MODELS.keys())}",
+        )
+
+    from src.evaluation.tasks import list_tasks
+    available_tasks = list_tasks()
+    invalid = [t for t in tasks if t not in available_tasks]
+    if invalid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown tasks: {invalid}. Available: {available_tasks}",
+        )
+
+    with _eval_lock:
+        if _eval_state["status"] == "running":
+            raise HTTPException(status_code=409, detail="An evaluation is already running")
+        _eval_state.update(status="running", model_name=model_name, task=None, error=None)
+
+    def _run():
+        try:
+            from src.evaluation import EvalConfig, evaluate
+            from src.evaluation.hf_model import HFModel
+
+            hf_id = EVAL_MODELS[model_name]
+            model = HFModel(hf_id)
+
+            for task_name in tasks:
+                with _eval_lock:
+                    _eval_state["task"] = task_name
+
+                config = EvalConfig(tasks=[task_name], max_samples=max_samples)
+                evaluate(model, config, db=eval_db, model_name=model_name)
+
+            del model
+
+            with _eval_lock:
+                _eval_state.update(status="idle", model_name=None, task=None)
+
+        except Exception as e:
+            with _eval_lock:
+                _eval_state.update(status="error", error=str(e))
+
+    thread = threading.Thread(target=_run, daemon=True)
+    thread.start()
+
+    return {"status": "started", "model_name": model_name, "tasks": tasks}
 
 
 # ── WebSocket ─────────────────────────────────────────────
