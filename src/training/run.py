@@ -31,6 +31,7 @@ def build_trainer(
     db: Optional[Database] = None,
     broadcaster: Optional[Broadcaster] = None,
     run_id: Optional[int] = None,
+    checkpoint_db=None,
 ) -> tuple[Trainer, int]:
     """Build everything from config. Returns (trainer, run_id) without starting."""
     if config is None:
@@ -95,7 +96,7 @@ def build_trainer(
         scheduler=scheduler,
         logger=logger,
         callbacks=callbacks,
-        db=db,
+        checkpoint_db=checkpoint_db,
         run_id=run_id,
     )
 

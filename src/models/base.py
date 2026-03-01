@@ -33,9 +33,11 @@ class BaseModel(nn.Module):
         """Autoregressive generation with optional top-k sampling."""
         self.eval()
         with torch.no_grad():
+            max_ctx = getattr(self, "max_seq_len", None)
             for _ in range(max_new_tokens):
                 # Crop to max sequence length if needed
-                logits = self.forward(input_ids).logits
+                ctx = input_ids if max_ctx is None else input_ids[:, -max_ctx:]
+                logits = self.forward(ctx).logits
                 logits = logits[:, -1, :] / temperature
 
                 if top_k is not None:

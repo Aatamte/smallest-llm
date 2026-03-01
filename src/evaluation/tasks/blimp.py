@@ -128,7 +128,7 @@ class BLiMPTask(EvalTask):
             resp.raise_for_status()
             dest.write_text(resp.text, encoding="utf-8")
 
-    def evaluate(self, model: Evaluatable, config: EvalConfig) -> EvalResult:
+    def evaluate(self, model: Evaluatable, config: EvalConfig, on_progress=None) -> EvalResult:
         self.download(config.data_dir)
         blimp_dir = Path(config.data_dir) / "blimp"
         tokenizer = model.tokenizer
@@ -146,22 +146,28 @@ class BLiMPTask(EvalTask):
             for st in subtasks:
                 subtask_to_field[st] = field_name
 
+        # Pre-load all pairs to get total count for progress
+        all_pairs: list[tuple[str, dict]] = []
         for subtask in _ALL_SUBTASKS:
             path = blimp_dir / f"{subtask}.jsonl"
             if not path.exists():
                 continue
-
             pairs = []
             with open(path) as f:
                 for line in f:
                     line = line.strip()
                     if line:
                         pairs.append(json.loads(line))
-
             if config.max_samples is not None:
                 pairs = pairs[: config.max_samples]
-
             for pair in pairs:
+                all_pairs.append((subtask, pair))
+
+        total_pairs = len(all_pairs)
+        if on_progress:
+            on_progress(0, total_pairs)
+
+        for i, (subtask, pair) in enumerate(all_pairs):
                 good_text = pair["sentence_good"]
                 bad_text = pair["sentence_bad"]
 
@@ -190,6 +196,9 @@ class BLiMPTask(EvalTask):
                         "bad_ll": round(bad_ll, 4),
                         "correct": bool(correct),
                     })
+
+                if on_progress:
+                    on_progress(i + 1, total_pairs)
 
         elapsed = time.perf_counter() - t0
 

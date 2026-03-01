@@ -1,6 +1,7 @@
 """Persistent storage for runs, metrics, and eval results."""
 
+from src.storage.checkpoint_db import CheckpointDatabase
 from src.storage.database import Database
 from src.storage.eval_db import EvalDatabase
 
-__all__ = ["Database", "EvalDatabase"]
+__all__ = ["CheckpointDatabase", "Database", "EvalDatabase"]

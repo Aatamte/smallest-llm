@@ -2,12 +2,12 @@ import { atom } from "jotai";
 import { persistAtom } from "../persist";
 
 export type SidebarTab = "train" | "inspect";
-export type PageId = "metrics" | "gradients" | "runs" | "logs" | "models" | "eval";
+export type PageId = "metrics" | "gradients" | "runs" | "logs" | "models" | "eval" | "chat";
 
-const VALID_PAGES = new Set<string>(["metrics", "gradients", "runs", "logs", "models", "eval"]);
+const VALID_PAGES = new Set<string>(["metrics", "gradients", "runs", "logs", "models", "eval", "chat"]);
 
 const TRAIN_PAGES = new Set<PageId>(["metrics", "gradients", "runs", "logs"]);
-const INSPECT_PAGES = new Set<PageId>(["models", "eval"]);
+const INSPECT_PAGES = new Set<PageId>(["models", "eval", "chat"]);
 
 export function parseHash(): { page: PageId; sub: string | null } {
   const parts = window.location.hash.replace(/^#\/?/, "").split("/");

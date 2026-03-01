@@ -14,6 +14,11 @@ if TYPE_CHECKING:
     from src.storage.eval_db import EvalDatabase
 
 
+class EvalCancelled(Exception):
+    """Raised when an evaluation is stopped by the user."""
+    pass
+
+
 def evaluate(
     model: Evaluatable,
     config: EvalConfig | None = None,
@@ -21,6 +26,7 @@ def evaluate(
     run_id: int | None = None,
     step: int | None = None,
     model_name: str | None = None,
+    on_progress=None,
 ) -> dict[str, EvalResult]:
     """Run evaluation tasks on a model.
 
@@ -50,12 +56,24 @@ def evaluate(
 
     total_t0 = time.perf_counter()
 
-    for task_name in config.tasks:
+    task_count = len(config.tasks)
+
+    for task_index, task_name in enumerate(config.tasks):
         print(f"--- {task_name} ---")
         task = get_task(task_name)
 
+        def _task_progress(current, total, _idx=task_index, _name=task_name):
+            if on_progress:
+                on_progress(
+                    task_index=_idx,
+                    task_count=task_count,
+                    task_name=_name,
+                    current=current,
+                    total=total,
+                )
+
         try:
-            result = task.evaluate(model, config)
+            result = task.evaluate(model, config, on_progress=_task_progress)
             results[task_name] = result
             print(result.summary_line())
 

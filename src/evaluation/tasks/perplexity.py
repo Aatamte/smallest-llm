@@ -40,7 +40,7 @@ class PerplexityTask(EvalTask):
         resp.raise_for_status()
         dest.write_text(resp.text, encoding="utf-8")
 
-    def evaluate(self, model: Evaluatable, config: EvalConfig) -> EvalResult:
+    def evaluate(self, model: Evaluatable, config: EvalConfig, on_progress=None) -> EvalResult:
         data_path = Path(config.data_dir) / "wikitext2_test.txt"
         self.download(config.data_dir)
 
@@ -64,8 +64,10 @@ class PerplexityTask(EvalTask):
 
         t0 = time.perf_counter()
 
-        # Compute total log-likelihood over the sequence
-        total_ll = model.loglikelihood_rolling(token_ids)
+        # Compute total log-likelihood, with optional progress reporting
+        if on_progress:
+            on_progress(0, num_tokens)
+        total_ll = model.loglikelihood_rolling(token_ids, on_progress=on_progress)
 
         elapsed = time.perf_counter() - t0
 

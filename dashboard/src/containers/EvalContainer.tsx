@@ -1,80 +1,106 @@
 import { useEffect, useCallback, useRef, useState } from "react";
-import { useAtomValue, useAtom } from "jotai";
-import { activeRunIdAtom, evalsAtom, type EvalResultInfo } from "../storage";
 import {
-  fetchEvals,
-  fetchAvailableModels,
   fetchAllEvals,
+  fetchAvailableModels,
   fetchEvalStatus,
+  fetchRuns,
+  fetchCheckpoints,
   runEval,
+  stopEval,
   type AvailableModel,
   type EvalStatus,
+  type RunEvalRequest,
 } from "../api/client";
 import { EvalPage } from "../components/EvalPage";
+import type { RunInfo } from "../storage";
 
-function latestByTask(evals: EvalResultInfo[]): Record<string, EvalResultInfo> {
-  const latest: Record<string, EvalResultInfo> = {};
-  for (const e of evals) {
-    if (!latest[e.task] || e.step > latest[e.task].step) {
-      latest[e.task] = e;
-    }
-  }
-  return latest;
+// model_name → task → metrics
+export type GroupedEvals = Record<string, Record<string, Record<string, number>>>;
+
+export interface CheckpointOption {
+  runId: number;
+  runName: string;
+  step: number;
+  label: string;
 }
 
 export function EvalContainer() {
-  const runId = useAtomValue(activeRunIdAtom);
-  const [evals, setEvals] = useAtom(evalsAtom);
-
-  // HF eval state
+  const [allEvals, setAllEvals] = useState<GroupedEvals>({});
   const [availableModels, setAvailableModels] = useState<AvailableModel[]>([]);
+  const [checkpointOptions, setCheckpointOptions] = useState<CheckpointOption[]>([]);
   const [evalStatus, setEvalStatus] = useState<EvalStatus>({
     status: "idle",
     model_name: null,
     task: null,
+    task_index: 0,
+    task_count: 0,
+    current_sample: 0,
+    total_samples: 0,
+    started_at: null,
     error: null,
   });
-  const [baselineEvals, setBaselineEvals] = useState<
-    Record<string, Record<string, Record<string, number>>>
-  >({});
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Fetch run-specific evals
-  useEffect(() => {
-    if (runId != null) {
-      fetchEvals(runId).then(setEvals).catch((e) => console.warn("Failed to fetch evals:", e));
-    } else {
-      setEvals([]);
-    }
-  }, [runId, setEvals]);
+  // Load all evals grouped by model_name → task → metrics
+  const loadAllEvals = useCallback(() => {
+    fetchAllEvals()
+      .then((evals) => {
+        const grouped: GroupedEvals = {};
+        for (const e of evals) {
+          const name = e.model_name;
+          if (!name) continue;
+          if (!grouped[name]) grouped[name] = {};
+          // Keep latest per task (by created_at or id)
+          grouped[name][e.task] = e.metrics;
+        }
+        setAllEvals(grouped);
+      })
+      .catch((e) => console.warn("Failed to fetch evals:", e));
+  }, []);
 
-  // Fetch available models on mount
+  useEffect(() => {
+    loadAllEvals();
+  }, [loadAllEvals]);
+
+  // Sync eval status on mount (picks up already-running evals)
+  useEffect(() => {
+    fetchEvalStatus()
+      .then(setEvalStatus)
+      .catch((e) => console.warn("Failed to fetch eval status:", e));
+  }, []);
+
+  // Load available HF models
   useEffect(() => {
     fetchAvailableModels()
       .then(setAvailableModels)
       .catch((e) => console.warn("Failed to fetch available models:", e));
   }, []);
 
-  // Load baseline evals from DB (all model evals not tied to a run)
-  const loadBaselines = useCallback(() => {
-    fetchAllEvals()
-      .then((allEvals) => {
-        const baselines: Record<string, Record<string, Record<string, number>>> = {};
-        for (const e of allEvals) {
-          const modelName = e.model_name;
-          if (!modelName) continue;
-          if (!baselines[modelName]) baselines[modelName] = {};
-          baselines[modelName][e.task] = e.metrics;
-        }
-        setBaselineEvals(baselines);
-      })
-      .catch((e) => console.warn("Failed to fetch baselines:", e));
-  }, []);
-
+  // Load checkpoint options (runs + their checkpoints)
   useEffect(() => {
-    loadBaselines();
-  }, [loadBaselines]);
+    fetchRuns()
+      .then(async (runs: RunInfo[]) => {
+        const options: CheckpointOption[] = [];
+        for (const run of runs) {
+          try {
+            const checkpoints = await fetchCheckpoints(run.id);
+            for (const cp of checkpoints) {
+              options.push({
+                runId: run.id,
+                runName: run.name,
+                step: cp.step,
+                label: `${run.name} (step ${cp.step})`,
+              });
+            }
+          } catch {
+            // skip runs without checkpoints
+          }
+        }
+        setCheckpointOptions(options);
+      })
+      .catch((e) => console.warn("Failed to fetch checkpoints:", e));
+  }, []);
 
   // Poll eval status while running
   useEffect(() => {
@@ -83,8 +109,7 @@ export function EvalContainer() {
         fetchEvalStatus().then((s) => {
           setEvalStatus(s);
           if (s.status !== "running") {
-            // Eval finished — reload baselines
-            loadBaselines();
+            loadAllEvals();
           }
         });
       }, 2000);
@@ -95,32 +120,46 @@ export function EvalContainer() {
         pollRef.current = null;
       }
     };
-  }, [evalStatus.status, loadBaselines]);
+  }, [evalStatus.status, loadAllEvals]);
 
   const handleRunEval = useCallback(
-    async (modelName: string, tasks: string[]) => {
+    async (request: RunEvalRequest) => {
       try {
-        await runEval(modelName, tasks);
-        setEvalStatus({ status: "running", model_name: modelName, task: null, error: null });
+        const result = await runEval(request);
+        setEvalStatus({
+          status: "running", model_name: result.model_name, task: null,
+          task_index: 0, task_count: 0, current_sample: 0, total_samples: 0,
+          started_at: Date.now() / 1000, error: null,
+        });
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
-        setEvalStatus({ status: "error", model_name: null, task: null, error: msg });
+        setEvalStatus({
+          status: "error", model_name: null, task: null,
+          task_index: 0, task_count: 0, current_sample: 0, total_samples: 0,
+          started_at: null, error: msg,
+        });
       }
     },
     [],
   );
 
-  const latest = latestByTask(evals);
+  const handleStopEval = useCallback(async () => {
+    try {
+      const status = await stopEval();
+      setEvalStatus(status);
+    } catch (e) {
+      console.warn("Failed to stop eval:", e);
+    }
+  }, []);
 
   return (
     <EvalPage
-      latestPerplexity={latest["perplexity"]}
-      latestBlimp={latest["blimp"]}
-      evals={evals}
+      allEvals={allEvals}
       availableModels={availableModels}
+      checkpointOptions={checkpointOptions}
       evalStatus={evalStatus}
-      baselineEvals={baselineEvals}
       onRunEval={handleRunEval}
+      onStopEval={handleStopEval}
     />
   );
 }

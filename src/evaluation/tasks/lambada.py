@@ -40,7 +40,7 @@ class LAMBADATask(EvalTask):
         resp.raise_for_status()
         dest.write_text(resp.text, encoding="utf-8")
 
-    def evaluate(self, model: Evaluatable, config: EvalConfig) -> EvalResult:
+    def evaluate(self, model: Evaluatable, config: EvalConfig, on_progress=None) -> EvalResult:
         self.download(config.data_dir)
         data_path = Path(config.data_dir) / "lambada_test.jsonl"
         tokenizer = model.tokenizer
@@ -58,6 +58,10 @@ class LAMBADATask(EvalTask):
         if config.max_samples is not None:
             passages = passages[: config.max_samples]
 
+        total_passages = len(passages)
+        if on_progress:
+            on_progress(0, total_passages)
+
         t0 = time.perf_counter()
 
         correct_count = 0
@@ -65,7 +69,7 @@ class LAMBADATask(EvalTask):
         total_target_tokens = 0
         per_sample: list[dict] = []
 
-        for passage in passages:
+        for i, passage in enumerate(passages):
             # Split into context + last word
             words = passage.rsplit(" ", 1)
             if len(words) < 2:
@@ -109,6 +113,9 @@ class LAMBADATask(EvalTask):
                     "correct": is_correct,
                     "target_ll": round(ll, 4),
                 })
+
+            if on_progress:
+                on_progress(i + 1, total_passages)
 
         elapsed = time.perf_counter() - t0
 

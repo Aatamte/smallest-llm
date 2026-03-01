@@ -173,9 +173,14 @@ export interface AvailableModel {
 }
 
 export interface EvalStatus {
-  status: "idle" | "running" | "error";
+  status: "idle" | "running" | "error" | "stopped";
   model_name: string | null;
   task: string | null;
+  task_index: number;
+  task_count: number;
+  current_sample: number;
+  total_samples: number;
+  started_at: number | null;
   error: string | null;
 }
 
@@ -185,15 +190,17 @@ export async function fetchAvailableModels(): Promise<AvailableModel[]> {
   return res.json();
 }
 
+export type RunEvalRequest =
+  | { source?: "hf"; model_name: string; tasks: string[]; max_samples?: number }
+  | { source: "checkpoint"; run_id: number; step: number; tasks: string[]; max_samples?: number };
+
 export async function runEval(
-  modelName: string,
-  tasks: string[],
-  maxSamples?: number,
+  request: RunEvalRequest,
 ): Promise<{ status: string; model_name: string; tasks: string[] }> {
   const res = await fetch(`${API_BASE}/evals/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model_name: modelName, tasks, max_samples: maxSamples ?? null }),
+    body: JSON.stringify(request),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -202,8 +209,64 @@ export async function runEval(
   return res.json();
 }
 
+export async function stopEval(): Promise<EvalStatus> {
+  const res = await fetch(`${API_BASE}/evals/stop`, { method: "POST" });
+  if (!res.ok) throw new Error(`Failed to stop eval: ${res.status}`);
+  return res.json();
+}
+
 export async function fetchEvalStatus(): Promise<EvalStatus> {
   const res = await fetch(`${API_BASE}/evals/status`);
   if (!res.ok) throw new Error(`Failed to fetch eval status: ${res.status}`);
   return res.json();
+}
+
+// ── Chat / Generation ───────────────────────────────────
+
+export interface ChatStatus {
+  loaded: boolean;
+  source: "checkpoint" | "hf" | null;
+  name: string | null;
+}
+
+export async function fetchChatStatus(): Promise<ChatStatus> {
+  const res = await fetch(`${API_BASE}/chat/status`);
+  if (!res.ok) throw new Error(`Failed to fetch chat status: ${res.status}`);
+  return res.json();
+}
+
+export async function loadChatModel(
+  opts: { source: "hf"; model_name: string } | { source: "checkpoint"; run_id: number; step: number },
+): Promise<{ status: string; name: string }> {
+  const res = await fetch(`${API_BASE}/chat/load`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(opts),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `Failed to load model: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function generateChat(
+  prompt: string,
+  params?: { max_tokens?: number; temperature?: number; top_k?: number },
+): Promise<{ text: string; prompt: string }> {
+  const res = await fetch(`${API_BASE}/chat/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt, ...params }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `Failed to generate: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function unloadChatModel(): Promise<void> {
+  const res = await fetch(`${API_BASE}/chat/unload`, { method: "POST" });
+  if (!res.ok) throw new Error(`Failed to unload model: ${res.status}`);
 }

@@ -29,7 +29,7 @@ class Trainer:
         scheduler,
         logger: Logger | None = None,
         callbacks: list | None = None,
-        db=None,
+        checkpoint_db=None,
         run_id: int | None = None,
     ):
         self.config = config
@@ -43,7 +43,7 @@ class Trainer:
 
         self.device = resolve_device(config.device)
         self.checkpoint_manager = CheckpointManager(
-            config.checkpoint, config, db=db, run_id=run_id,
+            config.checkpoint, config, db=checkpoint_db, run_id=run_id,
         )
 
         self.start_step = 0

@@ -68,15 +68,6 @@ class Database:
                 created_at TEXT DEFAULT (datetime('now'))
             );
 
-            CREATE TABLE IF NOT EXISTS checkpoints (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                run_id     INTEGER NOT NULL REFERENCES runs(id),
-                step       INTEGER NOT NULL,
-                path       TEXT NOT NULL,
-                metrics    TEXT,
-                is_best    INTEGER DEFAULT 0,
-                created_at TEXT DEFAULT (datetime('now'))
-            );
         """)
 
     # ── Runs ──────────────────────────────────────────────
@@ -94,6 +85,13 @@ class Database:
             )
             self._conn.commit()
             return cursor.lastrowid
+
+    def rename_run(self, run_id: int, name: str):
+        with self._lock:
+            self._conn.execute(
+                "UPDATE runs SET name = ? WHERE id = ?", (name, run_id),
+            )
+            self._conn.commit()
 
     def finish_run(self, run_id: int, status: str = "completed"):
         with self._lock:
@@ -195,38 +193,6 @@ class Database:
             rows = self._conn.execute(query, params).fetchall()
             return [dict(r) for r in rows]
 
-    # ── Checkpoints ───────────────────────────────────────
-
-    def log_checkpoint(
-        self,
-        run_id: int,
-        step: int,
-        path: str,
-        metrics: dict | None = None,
-        is_best: bool = False,
-    ):
-        with self._lock:
-            self._conn.execute(
-                "INSERT INTO checkpoints (run_id, step, path, metrics, is_best) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (
-                    run_id,
-                    step,
-                    path,
-                    json.dumps(metrics) if metrics else None,
-                    1 if is_best else 0,
-                ),
-            )
-            self._conn.commit()
-
-    def get_checkpoints(self, run_id: int) -> list[dict]:
-        with self._lock:
-            rows = self._conn.execute(
-                "SELECT * FROM checkpoints WHERE run_id = ? ORDER BY step",
-                (run_id,),
-            ).fetchall()
-            return [dict(r) for r in rows]
-
     # ── Delete ────────────────────────────────────────────
 
     def delete_run(self, run_id: int):
@@ -234,7 +200,6 @@ class Database:
         with self._lock:
             self._conn.execute("DELETE FROM metrics WHERE run_id = ?", (run_id,))
             self._conn.execute("DELETE FROM eval_results WHERE run_id = ?", (run_id,))
-            self._conn.execute("DELETE FROM checkpoints WHERE run_id = ?", (run_id,))
             self._conn.execute("DELETE FROM runs WHERE id = ?", (run_id,))
             self._conn.commit()
 

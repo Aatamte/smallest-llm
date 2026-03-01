@@ -1,29 +1,54 @@
-import { useEffect, useRef, useState } from "react";
-import uPlot from "uplot";
-import "uplot/dist/uPlot.min.css";
-import type { EvalResultInfo } from "../storage";
-import type { AvailableModel, EvalStatus } from "../api/client";
-import { CHART_COLORS, baseOpts } from "../types/chart";
+import { useState } from "react";
+import type { AvailableModel, EvalStatus, RunEvalRequest } from "../api/client";
+import type { GroupedEvals, CheckpointOption } from "../containers/EvalContainer";
 
-// ── Helpers ─────────────────────────────────────────────
+// ── Eval Progress ───────────────────────────────────────
 
-function CompareValue({
-  value,
-  baseline,
-  lowerIsBetter,
-  format,
-}: {
-  value: number | undefined;
-  baseline: number;
-  lowerIsBetter: boolean;
-  format: (n: number) => string;
-}) {
-  if (value === undefined) return <span className="layer-val">—</span>;
-  const better = lowerIsBetter ? value < baseline : value > baseline;
+function formatDuration(secs: number): string {
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+function EvalProgress({ evalStatus }: { evalStatus: EvalStatus }) {
+  const { model_name, task, task_index, task_count, current_sample, total_samples, started_at } = evalStatus;
+  const pct = total_samples > 0 ? (current_sample / total_samples) * 100 : 0;
+
+  let elapsed = "";
+  let eta = "";
+  if (started_at) {
+    const elapsedSecs = (Date.now() / 1000) - started_at;
+    elapsed = formatDuration(elapsedSecs);
+
+    if (current_sample > 0 && total_samples > 0 && current_sample < total_samples) {
+      const rate = current_sample / elapsedSecs;
+      const remaining = (total_samples - current_sample) / rate;
+      eta = formatDuration(remaining);
+    }
+  }
+
   return (
-    <span className={`layer-val ${better ? "eval-better" : "eval-worse"}`}>
-      {format(value)}
-    </span>
+    <div className="eval-progress">
+      <div className="eval-progress-header">
+        <span className="eval-progress-model">{model_name}</span>
+        {task && (
+          <span className="eval-progress-task">
+            Task {task_index + 1}/{task_count}: {task}
+          </span>
+        )}
+        <span className="eval-progress-elapsed">
+          {elapsed}{eta && ` · ETA ${eta}`}
+        </span>
+      </div>
+      <div className="eval-progress-bar">
+        <div className="eval-progress-fill" style={{ width: `${pct}%` }} />
+      </div>
+      {total_samples > 0 && (
+        <div className="eval-progress-text">
+          {current_sample} / {total_samples} samples ({pct.toFixed(0)}%)
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -33,14 +58,20 @@ const AVAILABLE_TASKS = ["perplexity", "blimp", "lambada"];
 
 function EvalControls({
   availableModels,
+  checkpointOptions,
   evalStatus,
   onRunEval,
+  onStopEval,
 }: {
   availableModels: AvailableModel[];
+  checkpointOptions: CheckpointOption[];
   evalStatus: EvalStatus;
-  onRunEval: (modelName: string, tasks: string[]) => void;
+  onRunEval: (request: RunEvalRequest) => void;
+  onStopEval: () => void;
 }) {
+  const [source, setSource] = useState<"hf" | "checkpoint">("hf");
   const [selectedModel, setSelectedModel] = useState("");
+  const [selectedCheckpoint, setSelectedCheckpoint] = useState("");
   const [selectedTasks, setSelectedTasks] = useState<Set<string>>(
     new Set(["perplexity", "blimp"]),
   );
@@ -57,29 +88,81 @@ function EvalControls({
   };
 
   const handleRun = () => {
-    if (!selectedModel || selectedTasks.size === 0) return;
-    onRunEval(selectedModel, [...selectedTasks]);
+    if (selectedTasks.size === 0) return;
+    if (source === "hf") {
+      if (!selectedModel) return;
+      onRunEval({ source: "hf", model_name: selectedModel, tasks: [...selectedTasks] });
+    } else {
+      if (!selectedCheckpoint) return;
+      const cp = checkpointOptions.find(
+        (c) => `${c.runId}-${c.step}` === selectedCheckpoint,
+      );
+      if (!cp) return;
+      onRunEval({ source: "checkpoint", run_id: cp.runId, step: cp.step, tasks: [...selectedTasks] });
+    }
   };
+
+  const canRun =
+    !isRunning &&
+    selectedTasks.size > 0 &&
+    (source === "hf" ? !!selectedModel : !!selectedCheckpoint);
 
   return (
     <div className="panel">
-      <h3 className="panel-title">Run Baseline Evaluation</h3>
+      <h3 className="panel-title">Run Evaluation</h3>
       <div className="eval-controls">
         <div className="eval-controls-row">
-          <label className="eval-control-label">Model</label>
-          <select
-            className="eval-select"
-            value={selectedModel}
-            onChange={(e) => setSelectedModel(e.target.value)}
-            disabled={isRunning}
-          >
-            <option value="">Select a model...</option>
-            {availableModels.map((m) => (
-              <option key={m.name} value={m.name}>
-                {m.name} ({m.hf_id})
-              </option>
-            ))}
-          </select>
+          <label className="eval-control-label">Source</label>
+          <div className="eval-source-toggle">
+            <button
+              className={`eval-source-btn ${source === "hf" ? "active" : ""}`}
+              onClick={() => setSource("hf")}
+              disabled={isRunning}
+            >
+              HF Model
+            </button>
+            <button
+              className={`eval-source-btn ${source === "checkpoint" ? "active" : ""}`}
+              onClick={() => setSource("checkpoint")}
+              disabled={isRunning}
+            >
+              Checkpoint
+            </button>
+          </div>
+        </div>
+        <div className="eval-controls-row">
+          <label className="eval-control-label">
+            {source === "hf" ? "Model" : "Checkpoint"}
+          </label>
+          {source === "hf" ? (
+            <select
+              className="eval-select"
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              disabled={isRunning}
+            >
+              <option value="">Select a model...</option>
+              {availableModels.map((m) => (
+                <option key={m.name} value={m.name}>
+                  {m.name} ({m.hf_id})
+                </option>
+              ))}
+            </select>
+          ) : (
+            <select
+              className="eval-select"
+              value={selectedCheckpoint}
+              onChange={(e) => setSelectedCheckpoint(e.target.value)}
+              disabled={isRunning}
+            >
+              <option value="">Select a checkpoint...</option>
+              {checkpointOptions.map((cp) => (
+                <option key={`${cp.runId}-${cp.step}`} value={`${cp.runId}-${cp.step}`}>
+                  {cp.label}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
         <div className="eval-controls-row">
           <label className="eval-control-label">Tasks</label>
@@ -101,27 +184,88 @@ function EvalControls({
           <button
             className="eval-run-btn"
             onClick={handleRun}
-            disabled={isRunning || !selectedModel || selectedTasks.size === 0}
+            disabled={!canRun}
           >
             {isRunning ? "Running..." : "Run Eval"}
           </button>
-          {isRunning && evalStatus.model_name && (
-            <span className="eval-status-text">
-              Evaluating <strong>{evalStatus.model_name}</strong>
-              {evalStatus.task && (
-                <>
-                  {" "}
-                  — task: <strong>{evalStatus.task}</strong>
-                </>
-              )}
-            </span>
+          {isRunning && (
+            <button
+              className="eval-stop-btn"
+              onClick={onStopEval}
+            >
+              Stop
+            </button>
           )}
           {evalStatus.status === "error" && evalStatus.error && (
             <span className="eval-status-text eval-error-text">
               Error: {evalStatus.error}
             </span>
           )}
+          {evalStatus.status === "stopped" && (
+            <span className="eval-status-text eval-stopped-text">
+              Evaluation stopped
+            </span>
+          )}
         </div>
+        {isRunning && evalStatus.model_name && (
+          <EvalProgress evalStatus={evalStatus} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Leaderboard ────────────────────────────────────────
+
+function Leaderboard({ allEvals }: { allEvals: GroupedEvals }) {
+  const modelNames = Object.keys(allEvals);
+
+  if (modelNames.length === 0) {
+    return null;
+  }
+
+  // Sort by perplexity (lower is better), models without perplexity go last
+  const sorted = [...modelNames].sort((a, b) => {
+    const pa = allEvals[a].perplexity?.perplexity ?? Infinity;
+    const pb = allEvals[b].perplexity?.perplexity ?? Infinity;
+    return pa - pb;
+  });
+
+  const cols = "minmax(120px, 1.5fr) repeat(4, 1fr)";
+
+  return (
+    <div className="panel">
+      <h3 className="panel-title">Leaderboard</h3>
+      <div className="eval-table">
+        <div className="eval-table-header" style={{ gridTemplateColumns: cols }}>
+          <span>Model</span>
+          <span>Perplexity</span>
+          <span>BPC</span>
+          <span>BLiMP Acc</span>
+          <span>LAMBADA Acc</span>
+        </div>
+        {sorted.map((name) => {
+          const ppl = allEvals[name].perplexity;
+          const blimp = allEvals[name].blimp;
+          const lambada = allEvals[name].lambada;
+          return (
+            <div key={name} className="eval-table-row" style={{ gridTemplateColumns: cols }}>
+              <span className="eval-cell-model">{name}</span>
+              <span className="eval-cell-val">
+                {ppl?.perplexity != null ? ppl.perplexity.toFixed(2) : "—"}
+              </span>
+              <span className="eval-cell-val">
+                {ppl?.bpc != null ? ppl.bpc.toFixed(4) : "—"}
+              </span>
+              <span className="eval-cell-val">
+                {blimp?.accuracy != null ? (blimp.accuracy * 100).toFixed(1) + "%" : "—"}
+              </span>
+              <span className="eval-cell-val">
+                {lambada?.accuracy != null ? (lambada.accuracy * 100).toFixed(1) + "%" : "—"}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -129,64 +273,46 @@ function EvalControls({
 
 // ── Perplexity Panel ────────────────────────────────────
 
-function PerplexityPanel({
-  latest,
-  baselines,
-}: {
-  latest: EvalResultInfo | undefined;
-  baselines: Record<string, Record<string, Record<string, number>>>;
-}) {
-  const metrics = latest?.metrics;
-  const baselineNames = Object.keys(baselines);
+function PerplexityPanel({ allEvals }: { allEvals: GroupedEvals }) {
+  const modelNames = Object.keys(allEvals).filter(
+    (name) => allEvals[name].perplexity != null,
+  );
+
+  if (modelNames.length === 0) {
+    return (
+      <div className="panel">
+        <h3 className="panel-title">Perplexity</h3>
+        <div className="panel-empty">No perplexity evals yet.</div>
+      </div>
+    );
+  }
+
+  const cols = "minmax(120px, 1.5fr) 1fr 1fr";
 
   return (
     <div className="panel">
       <h3 className="panel-title">Perplexity</h3>
-      {!metrics ? (
-        <div className="panel-empty">No perplexity evals yet.</div>
-      ) : (
-        <>
-          <div className="metrics-grid">
-            <div className="metric-card">
-              <div className="metric-label">Perplexity</div>
-              <div className="metric-value">
-                {metrics.perplexity?.toFixed(2) ?? "—"}
-              </div>
-              {latest && <div className="metric-sub">step {latest.step}</div>}
+      <div className="eval-table">
+        <div className="eval-table-header" style={{ gridTemplateColumns: cols }}>
+          <span>Model</span>
+          <span>Perplexity</span>
+          <span>BPC</span>
+        </div>
+        {modelNames.map((name) => {
+          const m = allEvals[name].perplexity;
+          return (
+            <div key={name} className="eval-table-row" style={{ gridTemplateColumns: cols }}>
+              <span className="eval-cell-model">{name}</span>
+              <span className="eval-cell-val">
+                {m?.perplexity != null ? m.perplexity.toFixed(2) : "—"}
+              </span>
+              <span className="eval-cell-val">
+                {m?.bpc != null ? m.bpc.toFixed(4) : "—"}
+              </span>
             </div>
-            <div className="metric-card">
-              <div className="metric-label">BPC</div>
-              <div className="metric-value">
-                {metrics.bpc?.toFixed(4) ?? "—"}
-              </div>
-              <div className="metric-sub">bits/char</div>
-            </div>
-          </div>
-          {baselineNames.length > 0 && (
-            <div className="eval-comparison-row">
-              {baselineNames.map((name) => {
-                const b = baselines[name]?.perplexity;
-                if (!b) return null;
-                return (
-                  <div key={name} className="eval-baseline">
-                    <span className="eval-baseline-name">{name}</span>
-                    {b.perplexity != null && (
-                      <span className="eval-baseline-value">
-                        ppl={b.perplexity.toFixed(1)}
-                      </span>
-                    )}
-                    {b.bpc != null && (
-                      <span className="eval-baseline-value">
-                        bpc={b.bpc.toFixed(3)}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </>
-      )}
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -201,160 +327,92 @@ const BLIMP_CATEGORIES = [
   { key: "accuracy_syntax_semantics", label: "Syntax-Semantics" },
 ];
 
-function BlimpPanel({
-  latest,
-  baselines,
-}: {
-  latest: EvalResultInfo | undefined;
-  baselines: Record<string, Record<string, Record<string, number>>>;
-}) {
-  const metrics = latest?.metrics;
-  const baselineNames = Object.keys(baselines);
+function BlimpPanel({ allEvals }: { allEvals: GroupedEvals }) {
+  const modelNames = Object.keys(allEvals).filter(
+    (name) => allEvals[name].blimp != null,
+  );
+
+  if (modelNames.length === 0) {
+    return (
+      <div className="panel">
+        <h3 className="panel-title">BLiMP</h3>
+        <div className="panel-empty">No BLiMP evals yet.</div>
+      </div>
+    );
+  }
+
+  const cols = `minmax(120px, 1.5fr) repeat(${modelNames.length}, 1fr)`;
 
   return (
     <div className="panel">
-      <h3 className="panel-title">BLiMP (Linguistic Minimal Pairs)</h3>
-      {!metrics ? (
-        <div className="panel-empty">No BLiMP evals yet.</div>
-      ) : (
-        <div className="layer-stats-container">
-          <div className="eval-table-header">
-            <span>Category</span>
-            <span>Your Model</span>
-            {baselineNames.map((n) => (
-              <span key={n}>{n}</span>
-            ))}
-          </div>
-          {BLIMP_CATEGORIES.map(({ key, label }) => (
-            <div key={key} className="eval-table-row">
-              <span className="layer-name">{label}</span>
-              <span className="layer-val">
-                {metrics[key] !== undefined
-                  ? (metrics[key] * 100).toFixed(1) + "%"
-                  : "—"}
-              </span>
-              {baselineNames.map((name) => {
-                const bVal = baselines[name]?.blimp?.[key];
-                return (
-                  <CompareValue
-                    key={name}
-                    value={
-                      metrics[key] !== undefined ? metrics[key] : undefined
-                    }
-                    baseline={bVal ?? 0}
-                    lowerIsBetter={false}
-                    format={(v) => (v * 100).toFixed(1) + "%"}
-                  />
-                );
-              })}
-            </div>
+      <h3 className="panel-title">BLiMP</h3>
+      <div className="eval-table">
+        <div className="eval-table-header" style={{ gridTemplateColumns: cols }}>
+          <span>Category</span>
+          {modelNames.map((name) => (
+            <span key={name}>{name}</span>
           ))}
         </div>
-      )}
+        {BLIMP_CATEGORIES.map(({ key, label }) => (
+          <div key={key} className="eval-table-row" style={{ gridTemplateColumns: cols }}>
+            <span className="eval-cell-model">{label}</span>
+            {modelNames.map((name) => {
+              const val = allEvals[name].blimp?.[key];
+              return (
+                <span key={name} className="eval-cell-val">
+                  {val != null ? (val * 100).toFixed(1) + "%" : "—"}
+                </span>
+              );
+            })}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
-// ── Eval Over Steps Chart ───────────────────────────────
+// ── LAMBADA Panel ───────────────────────────────────────
 
-function EvalChart({ evals }: { evals: EvalResultInfo[] }) {
-  const divRef = useRef<HTMLDivElement>(null);
-  const plotRef = useRef<uPlot | null>(null);
+function LambadaPanel({ allEvals }: { allEvals: GroupedEvals }) {
+  const modelNames = Object.keys(allEvals).filter(
+    (name) => allEvals[name].lambada != null,
+  );
 
-  useEffect(() => {
-    if (!divRef.current) return;
-
-    const perplexityEvals = evals
-      .filter((e) => e.task === "perplexity" && e.metrics.perplexity != null)
-      .sort((a, b) => a.step - b.step);
-
-    const blimpEvals = evals
-      .filter((e) => e.task === "blimp" && e.metrics.accuracy != null)
-      .sort((a, b) => a.step - b.step);
-
-    if (perplexityEvals.length === 0 && blimpEvals.length === 0) return;
-
-    const allSteps = [
-      ...new Set([
-        ...perplexityEvals.map((e) => e.step),
-        ...blimpEvals.map((e) => e.step),
-      ]),
-    ].sort((a, b) => a - b);
-
-    const perpMap = new Map(
-      perplexityEvals.map((e) => [e.step, e.metrics.perplexity]),
+  if (modelNames.length === 0) {
+    return (
+      <div className="panel">
+        <h3 className="panel-title">LAMBADA</h3>
+        <div className="panel-empty">No LAMBADA evals yet.</div>
+      </div>
     );
-    const blimpMap = new Map(
-      blimpEvals.map((e) => [e.step, e.metrics.accuracy]),
-    );
+  }
 
-    const xData = Float64Array.from(allSteps);
-    const perpData = allSteps.map((s) => perpMap.get(s) ?? null);
-    const blimpData = allSteps.map((s) => blimpMap.get(s) ?? null);
-
-    plotRef.current?.destroy();
-    plotRef.current = new uPlot(
-      {
-        ...baseOpts(800, 300),
-        series: [
-          {},
-          {
-            label: "Perplexity",
-            stroke: CHART_COLORS.trainLoss,
-            width: 2,
-            scale: "perp",
-          },
-          {
-            label: "BLiMP Acc",
-            stroke: CHART_COLORS.updateRatio,
-            width: 2,
-            scale: "acc",
-          },
-        ],
-        scales: {
-          x: { auto: true },
-          perp: { auto: true },
-          acc: { auto: true, range: [0, 1] },
-        },
-        axes: [
-          {
-            stroke: CHART_COLORS.text,
-            grid: { stroke: CHART_COLORS.grid, width: 1 },
-            font: "11px Inter, sans-serif",
-          },
-          {
-            scale: "perp",
-            stroke: CHART_COLORS.trainLoss,
-            grid: { stroke: CHART_COLORS.grid, width: 1 },
-            font: "11px Inter, sans-serif",
-            label: "Perplexity",
-          },
-          {
-            scale: "acc",
-            side: 1,
-            stroke: CHART_COLORS.updateRatio,
-            grid: { show: false },
-            font: "11px Inter, sans-serif",
-            label: "Accuracy",
-          },
-        ],
-      } as uPlot.Options,
-      [xData as unknown as number[], perpData, blimpData] as uPlot.AlignedData,
-      divRef.current,
-    );
-
-    return () => {
-      plotRef.current?.destroy();
-      plotRef.current = null;
-    };
-  }, [evals]);
-
-  if (evals.length === 0) return null;
+  const cols = "minmax(120px, 1.5fr) 1fr 1fr";
 
   return (
     <div className="panel">
-      <h3 className="panel-title">Eval Metrics Over Training</h3>
-      <div ref={divRef} />
+      <h3 className="panel-title">LAMBADA</h3>
+      <div className="eval-table">
+        <div className="eval-table-header" style={{ gridTemplateColumns: cols }}>
+          <span>Model</span>
+          <span>Accuracy</span>
+          <span>Target PPL</span>
+        </div>
+        {modelNames.map((name) => {
+          const m = allEvals[name].lambada;
+          return (
+            <div key={name} className="eval-table-row" style={{ gridTemplateColumns: cols }}>
+              <span className="eval-cell-model">{name}</span>
+              <span className="eval-cell-val">
+                {m?.accuracy != null ? (m.accuracy * 100).toFixed(1) + "%" : "—"}
+              </span>
+              <span className="eval-cell-val">
+                {m?.target_perplexity != null ? m.target_perplexity.toFixed(2) : "—"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -362,34 +420,35 @@ function EvalChart({ evals }: { evals: EvalResultInfo[] }) {
 // ── Main Page ───────────────────────────────────────────
 
 export interface EvalPageProps {
-  latestPerplexity: EvalResultInfo | undefined;
-  latestBlimp: EvalResultInfo | undefined;
-  evals: EvalResultInfo[];
+  allEvals: GroupedEvals;
   availableModels: AvailableModel[];
+  checkpointOptions: CheckpointOption[];
   evalStatus: EvalStatus;
-  baselineEvals: Record<string, Record<string, Record<string, number>>>;
-  onRunEval: (modelName: string, tasks: string[]) => void;
+  onRunEval: (request: RunEvalRequest) => void;
+  onStopEval: () => void;
 }
 
 export function EvalPage({
-  latestPerplexity,
-  latestBlimp,
-  evals,
+  allEvals,
   availableModels,
+  checkpointOptions,
   evalStatus,
-  baselineEvals,
   onRunEval,
+  onStopEval,
 }: EvalPageProps) {
   return (
     <main className="eval-layout">
       <EvalControls
         availableModels={availableModels}
+        checkpointOptions={checkpointOptions}
         evalStatus={evalStatus}
         onRunEval={onRunEval}
+        onStopEval={onStopEval}
       />
-      <PerplexityPanel latest={latestPerplexity} baselines={baselineEvals} />
-      <BlimpPanel latest={latestBlimp} baselines={baselineEvals} />
-      <EvalChart evals={evals} />
+      <Leaderboard allEvals={allEvals} />
+      <PerplexityPanel allEvals={allEvals} />
+      <BlimpPanel allEvals={allEvals} />
+      <LambadaPanel allEvals={allEvals} />
     </main>
   );
 }

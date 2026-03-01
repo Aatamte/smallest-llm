@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Callable, Optional
 
 from src.evaluation.config import EvalConfig
 from src.evaluation.protocol import Evaluatable
 from src.evaluation.results import EvalResult
+
+# on_progress(current_sample, total_samples)
+ProgressCallback = Callable[[int, int], None]
 
 
 class EvalTask(ABC):
@@ -19,5 +23,10 @@ class EvalTask(ABC):
         """Download / cache the dataset if not already present."""
 
     @abstractmethod
-    def evaluate(self, model: Evaluatable, config: EvalConfig) -> EvalResult:
+    def evaluate(
+        self,
+        model: Evaluatable,
+        config: EvalConfig,
+        on_progress: Optional[ProgressCallback] = None,
+    ) -> EvalResult:
         """Run evaluation and return results."""
