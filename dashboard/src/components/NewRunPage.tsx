@@ -130,16 +130,12 @@ function StagesSection({
 
 export interface NewRunPageProps {
   status: TrainingStatus;
-  config: Record<string, unknown> | null;
   presets: { name: string; label: string; description?: string }[];
   activePreset: string;
   onPresetChange: (name: string) => void;
   evalPresets: { name: string; label: string }[];
   activeEvalPreset: string;
   onEvalPresetChange: (name: string) => void;
-  onConfigChange: (section: string, key: string, value: unknown) => void;
-  onTopLevelChange: (key: string, value: unknown) => void;
-  onStageChange: (index: number, key: string, value: unknown) => void;
   starting: boolean;
   error: string | null;
   onStart: () => void;
@@ -147,53 +143,22 @@ export interface NewRunPageProps {
 
 export function NewRunPage({
   status,
-  config,
   presets,
   activePreset,
   onPresetChange,
   evalPresets,
   activeEvalPreset,
   onEvalPresetChange,
-  onConfigChange,
-  onTopLevelChange,
-  onStageChange,
   starting,
   error,
   onStart,
 }: NewRunPageProps) {
   const isRunning = status === "training";
 
-  const topLevel = config
-    ? Object.entries(config).filter(([k, v]) => k !== "stages" && (typeof v !== "object" || v === null))
-    : [];
-  const sections = config
-    ? Object.entries(config).filter(
-        ([k, v]) => k !== "stages" && typeof v === "object" && v !== null && !Array.isArray(v),
-      )
-    : [];
-  const stages = config?.stages as StageData[] | null | undefined;
-
   return (
     <main className="runs-layout">
       <div className="runs-header-row">
         <h3 className="panel-title" style={{ marginBottom: 0 }}>New Run</h3>
-      </div>
-
-      <div className="panel">
-        <h3 className="panel-title">Start Training</h3>
-        <div className="run-start-row">
-          <button
-            className="run-start-btn"
-            onClick={onStart}
-            disabled={isRunning || starting}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <polygon points="5 3 19 12 5 21 5 3" />
-            </svg>
-            {starting ? "Starting..." : isRunning ? "Running..." : "Start Training"}
-          </button>
-          {error && <span className="run-error">{error}</span>}
-        </div>
       </div>
 
       <div className="panel">
@@ -231,33 +196,22 @@ export function NewRunPage({
             </select>
           )}
         </div>
+      </div>
 
-        {!config ? (
-          <div className="panel-empty">Loading config...</div>
-        ) : (
-          <>
-            {stages && stages.length > 0 && (
-              <StagesSection stages={stages} onStageChange={onStageChange} />
-            )}
-            <div className="config-grid">
-              {topLevel.length > 0 && (
-                <ConfigSection
-                  title="General"
-                  data={Object.fromEntries(topLevel)}
-                  onChange={(key, value) => onTopLevelChange(key, value)}
-                />
-              )}
-              {sections.map(([sectionKey, value]) => (
-                <ConfigSection
-                  key={sectionKey}
-                  title={sectionKey}
-                  data={value as Record<string, unknown>}
-                  onChange={(key, val) => onConfigChange(sectionKey, key, val)}
-                />
-              ))}
-            </div>
-          </>
-        )}
+      <div className="panel">
+        <div className="run-start-row">
+          <button
+            className="run-start-btn"
+            onClick={onStart}
+            disabled={isRunning || starting}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5 3 19 12 5 21 5 3" />
+            </svg>
+            {starting ? "Starting..." : isRunning ? "Running..." : "Start Training"}
+          </button>
+          {error && <span className="run-error">{error}</span>}
+        </div>
       </div>
     </main>
   );

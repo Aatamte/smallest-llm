@@ -192,8 +192,8 @@ def test_eval_config_fields():
     config = ExperimentConfig()
     assert config.training.eval_tasks is True
     assert config.training.eval_tasks_interval == 2000
-    assert config.training.eval_tasks_list == "perplexity,blimp"
-    assert config.training.eval_tasks_max_samples == 500
+    assert config.training.eval_tasks_list == "hellaswag,arc_easy,arc_challenge,piqa,winogrande,mmlu"
+    assert config.training.eval_tasks_max_samples == 100
 
 
 def test_eval_config_from_dict_roundtrip():

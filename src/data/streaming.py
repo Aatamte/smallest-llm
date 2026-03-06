@@ -28,6 +28,7 @@ class StreamingTextDataset(IterableDataset):
         tokenizer: Tokenizer,
         seq_len: int,
         shuffle_buffer: int = 10_000,
+        config: str | None = None,
     ):
         self.hf_path = hf_path
         self.split = split
@@ -35,6 +36,7 @@ class StreamingTextDataset(IterableDataset):
         self.tokenizer = tokenizer
         self.seq_len = seq_len
         self.shuffle_buffer = shuffle_buffer
+        self.config = config
         self._cached_ds = None
 
     def _get_dataset(self):
@@ -51,9 +53,9 @@ class StreamingTextDataset(IterableDataset):
 
             cache_dir = str(HF_CACHE_DIR)
             try:
-                self._cached_ds = load_dataset(self.hf_path, split=self.split, cache_dir=cache_dir)
+                self._cached_ds = load_dataset(self.hf_path, self.config, split=self.split, cache_dir=cache_dir)
             except Exception:
-                self._cached_ds = load_dataset(self.hf_path, split=self.split, streaming=True)
+                self._cached_ds = load_dataset(self.hf_path, self.config, split=self.split, streaming=True)
             finally:
                 hf_logger.setLevel(prev_level)
         return self._cached_ds
@@ -93,6 +95,7 @@ def build_streaming_dataloaders(
         text_field=dataset_info.text_field,
         tokenizer=tokenizer,
         seq_len=config.max_seq_len,
+        config=dataset_info.config,
     )
 
     val_ds = StreamingTextDataset(
@@ -102,6 +105,7 @@ def build_streaming_dataloaders(
         tokenizer=tokenizer,
         seq_len=config.max_seq_len,
         shuffle_buffer=0,  # no shuffling for deterministic eval
+        config=dataset_info.config,
     )
 
     # Reuse validation as test (TinyStories only has train/validation)
@@ -112,6 +116,7 @@ def build_streaming_dataloaders(
         tokenizer=tokenizer,
         seq_len=config.max_seq_len,
         shuffle_buffer=0,
+        config=dataset_info.config,
     )
 
     loader_kwargs = dict(

@@ -22,11 +22,15 @@ export interface TrainingInfoBarProps {
   dataset: string;
   step: number;
   maxSteps: number;
+  maxFlops: number;
+  flopsPct: number;
   elapsedMin: number;
   elapsedSec: number;
   tokensPerSec: number;
   trainLoss: number;
   bpc: number;
+  etaSeconds: number | null;
+  nextEvalStep: number | null;
   textState: string;
   stopping: boolean;
   onStop: () => void;
@@ -50,16 +54,23 @@ export function TrainingInfoBar({
   dataset,
   step,
   maxSteps,
+  maxFlops,
+  flopsPct,
   elapsedMin,
   elapsedSec,
   tokensPerSec,
   trainLoss,
   bpc,
+  etaSeconds,
+  nextEvalStep,
   textState,
   stopping,
   onStop,
 }: TrainingInfoBarProps) {
-  const pct = maxSteps > 0 ? Math.min((step / maxSteps) * 100, 100) : 0;
+  const useFlopsBudget = maxFlops > 0;
+  const pct = useFlopsBudget
+    ? Math.min(flopsPct, 100)
+    : maxSteps > 0 ? Math.min((step / maxSteps) * 100, 100) : 0;
 
   return (
     <div className="train-info-bar">
@@ -93,6 +104,11 @@ export function TrainingInfoBar({
         <div style={{ flex: 1 }} />
         <span className="train-info-stat">
           {elapsedMin}m {elapsedSec.toString().padStart(2, "0")}s
+          {etaSeconds != null && etaSeconds > 0 && (
+            <span style={{ opacity: 0.6 }}>
+              {" "}/ ~{Math.floor(etaSeconds / 60)}m {(etaSeconds % 60).toString().padStart(2, "0")}s left
+            </span>
+          )}
         </span>
         {status === "training" && (
           <button
@@ -115,10 +131,19 @@ export function TrainingInfoBar({
             />
           </div>
         </div>
-        <span className="train-info-stat">
-          <strong>{step.toLocaleString()}</strong> / {maxSteps.toLocaleString()}
-        </span>
-        <span className="train-info-stat">{pct.toFixed(1)}%</span>
+        {useFlopsBudget ? (
+          <>
+            <span className="train-info-stat">{pct.toFixed(1)}% FLOPs</span>
+            <span className="train-info-stat">Step {step.toLocaleString()}</span>
+          </>
+        ) : (
+          <>
+            <span className="train-info-stat">
+              <strong>{step.toLocaleString()}</strong> / {maxSteps.toLocaleString()}
+            </span>
+            <span className="train-info-stat">{pct.toFixed(1)}%</span>
+          </>
+        )}
         {tokensPerSec > 0 && (
           <span className="train-info-stat">{fmtNum(tokensPerSec)} tok/s</span>
         )}
@@ -127,6 +152,11 @@ export function TrainingInfoBar({
         )}
         {bpc > 0 && (
           <span className="train-info-stat">bpc {bpc.toFixed(3)}</span>
+        )}
+        {nextEvalStep != null && status === "training" && nextEvalStep > step && (
+          <span className="train-info-stat" style={{ opacity: 0.7 }}>
+            eval in {(nextEvalStep - step).toLocaleString()} steps
+          </span>
         )}
       </div>
 

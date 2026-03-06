@@ -1,12 +1,12 @@
 import { atom } from "jotai";
 import { persistAtom } from "../persist";
 
-export type PageId = "train" | "runs" | "models" | "eval" | "chat" | "tables";
+export type PageId = "train" | "runs" | "models" | "eval" | "chat" | "tables" | "leaderboard";
 
 /** Whether the sidebar is visible. Persisted across sessions. */
 export const sidebarOpenAtom = persistAtom<boolean>("sllm:sidebarOpen", true);
 
-const VALID_PAGES = new Set<string>(["train", "runs", "models", "eval", "chat", "tables"]);
+const VALID_PAGES = new Set<string>(["train", "runs", "models", "eval", "chat", "tables", "leaderboard"]);
 
 export function parseHash(): { page: PageId; sub: string | null } {
   const parts = window.location.hash.replace(/^#\/?/, "").split("/");

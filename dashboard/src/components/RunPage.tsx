@@ -140,103 +140,36 @@ function RunList({
 
 // ── New Run (#/runs/new) ─────────────────────────────────
 
-function ConfigSection({
-  title,
-  data,
-  onChange,
-}: {
-  title: string;
-  data: Record<string, unknown>;
-  onChange: (key: string, value: unknown) => void;
-}) {
-  return (
-    <div className="config-section">
-      <h4 className="config-section-title">{title}</h4>
-      <div className="config-fields">
-        {Object.entries(data).map(([key, value]) => (
-          <div className="config-field" key={key}>
-            <span className="config-key">{key}</span>
-            <ConfigInput value={value} onChange={(v) => onChange(key, v)} />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ConfigInput({
-  value,
-  onChange,
-}: {
-  value: unknown;
-  onChange: (v: unknown) => void;
-}) {
-  if (typeof value === "boolean") {
-    return (
-      <input
-        className="config-checkbox"
-        type="checkbox"
-        checked={value}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-    );
-  }
-  if (typeof value === "number") {
-    return (
-      <input
-        className="config-input"
-        type="text"
-        value={String(value)}
-        onChange={(e) => {
-          const n = Number(e.target.value);
-          onChange(isNaN(n) ? e.target.value : n);
-        }}
-      />
-    );
-  }
-  return (
-    <input
-      className="config-input"
-      type="text"
-      value={String(value ?? "")}
-      onChange={(e) => onChange(e.target.value)}
-    />
-  );
-}
-
 function NewRunPage({
   status,
-  config,
   presets,
   activePreset,
   onPresetChange,
-  onConfigChange,
-  onTopLevelChange,
+  evalPresets,
+  activeEvalPreset,
+  onEvalPresetChange,
+  flopsBudgets,
+  activeFlopsBudget,
+  onFlopsBudgetChange,
   starting,
   error,
   onStart,
 }: {
   status: TrainingStatus;
-  config: Record<string, unknown> | null;
-  presets: { name: string; label: string }[];
+  presets: { name: string; label: string; description?: string }[];
   activePreset: string;
   onPresetChange: (name: string) => void;
-  onConfigChange: (section: string, key: string, value: unknown) => void;
-  onTopLevelChange: (key: string, value: unknown) => void;
+  evalPresets: { name: string; label: string }[];
+  activeEvalPreset: string;
+  onEvalPresetChange: (name: string) => void;
+  flopsBudgets: { name: string; label: string }[];
+  activeFlopsBudget: string;
+  onFlopsBudgetChange: (name: string) => void;
   starting: boolean;
   error: string | null;
   onStart: () => void;
 }) {
   const isRunning = status === "training";
-
-  const topLevel = config
-    ? Object.entries(config).filter(([, v]) => typeof v !== "object" || v === null)
-    : [];
-  const sections = config
-    ? Object.entries(config).filter(
-        ([, v]) => typeof v === "object" && v !== null && !Array.isArray(v),
-      )
-    : [];
 
   return (
     <main className="runs-layout">
@@ -251,7 +184,57 @@ function NewRunPage({
       </div>
 
       <div className="panel">
-        <h3 className="panel-title">Start Training</h3>
+        <div className="preset-selector-row">
+          <h3 className="panel-title" style={{ marginBottom: 0 }}>Training Preset</h3>
+          {presets.length > 0 && (
+            <>
+              <select
+                className="run-selector"
+                value={activePreset}
+                onChange={(e) => onPresetChange(e.target.value)}
+              >
+                {presets.map((p) => (
+                  <option key={p.name} value={p.name}>{p.label}</option>
+                ))}
+              </select>
+              {(() => {
+                const desc = presets.find((p) => p.name === activePreset)?.description;
+                return desc ? <span className="preset-description">{desc}</span> : null;
+              })()}
+            </>
+          )}
+        </div>
+        <div className="preset-selector-row" style={{ marginTop: 8 }}>
+          <h3 className="panel-title" style={{ marginBottom: 0 }}>Eval Preset</h3>
+          {evalPresets.length > 0 && (
+            <select
+              className="run-selector"
+              value={activeEvalPreset}
+              onChange={(e) => onEvalPresetChange(e.target.value)}
+            >
+              {evalPresets.map((p) => (
+                <option key={p.name} value={p.name}>{p.label}</option>
+              ))}
+            </select>
+          )}
+        </div>
+        <div className="preset-selector-row" style={{ marginTop: 8 }}>
+          <h3 className="panel-title" style={{ marginBottom: 0 }}>FLOPs Budget</h3>
+          {flopsBudgets.length > 0 && (
+            <select
+              className="run-selector"
+              value={activeFlopsBudget}
+              onChange={(e) => onFlopsBudgetChange(e.target.value)}
+            >
+              {flopsBudgets.map((b) => (
+                <option key={b.name} value={b.name}>{b.label}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      </div>
+
+      <div className="panel">
         <div className="run-start-row">
           <button
             className="run-start-btn"
@@ -266,44 +249,6 @@ function NewRunPage({
           {error && <span className="run-error">{error}</span>}
         </div>
       </div>
-
-      <div className="panel">
-        <div className="preset-selector-row">
-          <h3 className="panel-title" style={{ marginBottom: 0 }}>Configuration</h3>
-          {presets.length > 0 && (
-            <select
-              className="run-selector"
-              value={activePreset}
-              onChange={(e) => onPresetChange(e.target.value)}
-            >
-              {presets.map((p) => (
-                <option key={p.name} value={p.name}>{p.label}</option>
-              ))}
-            </select>
-          )}
-        </div>
-        {!config ? (
-          <div className="panel-empty">Loading config...</div>
-        ) : (
-          <div className="config-grid">
-            {topLevel.length > 0 && (
-              <ConfigSection
-                title="General"
-                data={Object.fromEntries(topLevel)}
-                onChange={(key, value) => onTopLevelChange(key, value)}
-              />
-            )}
-            {sections.map(([sectionKey, value]) => (
-              <ConfigSection
-                key={sectionKey}
-                title={sectionKey}
-                data={value as Record<string, unknown>}
-                onChange={(key, val) => onConfigChange(sectionKey, key, val)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
     </main>
   );
 }
@@ -317,12 +262,15 @@ export interface RunPageProps {
   onDeleteRun: (id: number) => void;
   onBulkDelete: (ids: number[]) => void;
   status: TrainingStatus;
-  config: Record<string, unknown> | null;
-  presets: { name: string; label: string }[];
+  presets: { name: string; label: string; description?: string }[];
   activePreset: string;
   onPresetChange: (name: string) => void;
-  onConfigChange: (section: string, key: string, value: unknown) => void;
-  onTopLevelChange: (key: string, value: unknown) => void;
+  evalPresets: { name: string; label: string }[];
+  activeEvalPreset: string;
+  onEvalPresetChange: (name: string) => void;
+  flopsBudgets: { name: string; label: string }[];
+  activeFlopsBudget: string;
+  onFlopsBudgetChange: (name: string) => void;
   starting: boolean;
   error: string | null;
   onStart: () => void;
@@ -332,12 +280,15 @@ export function RunPage(props: RunPageProps) {
   return props.sub === "new" ? (
     <NewRunPage
       status={props.status}
-      config={props.config}
       presets={props.presets}
       activePreset={props.activePreset}
       onPresetChange={props.onPresetChange}
-      onConfigChange={props.onConfigChange}
-      onTopLevelChange={props.onTopLevelChange}
+      evalPresets={props.evalPresets}
+      activeEvalPreset={props.activeEvalPreset}
+      onEvalPresetChange={props.onEvalPresetChange}
+      flopsBudgets={props.flopsBudgets}
+      activeFlopsBudget={props.activeFlopsBudget}
+      onFlopsBudgetChange={props.onFlopsBudgetChange}
       starting={props.starting}
       error={props.error}
       onStart={props.onStart}

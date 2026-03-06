@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import time
-from itertools import cycle
 from typing import TYPE_CHECKING
 
 import torch
@@ -120,10 +119,14 @@ class Trainer:
             self.logger.log_step(timing_metrics, step=step)
 
     def _next_batch(self) -> dict:
-        """Get next batch from infinite iterator."""
+        """Get next batch from infinite iterator (re-iterates without caching)."""
         if self._train_iter is None:
-            self._train_iter = iter(cycle(self.train_loader))
-        return next(self._train_iter)
+            self._train_iter = iter(self.train_loader)
+        try:
+            return next(self._train_iter)
+        except StopIteration:
+            self._train_iter = iter(self.train_loader)
+            return next(self._train_iter)
 
     def _fire_callback(self, method: str, **kwargs):
         for cb in self.callbacks:
@@ -357,7 +360,7 @@ class Trainer:
                 self._tock("logging", t)
 
             # --- Evaluation ---
-            if step > 0 and step % tc.eval_interval == 0:
+            if tc.eval_loss and step > 0 and step % tc.eval_interval == 0:
                 self._set_text_state(f"{self._stage_prefix()}Evaluating · Step {step:,}/{tc.max_steps:,}")
                 t = self._tick()
                 val_metrics = self.evaluate()

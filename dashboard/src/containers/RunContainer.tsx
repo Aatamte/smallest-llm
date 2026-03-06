@@ -4,7 +4,7 @@ import { activeRunIdAtom } from "../storage";
 import { subPageAtom } from "../storage/atoms/uiAtoms";
 import { navigateTo } from "../storage/atoms/uiAtoms";
 import { useStatus, useRuns } from "../db/hooks";
-import { startRun, deleteRun, bulkDeleteRuns, fetchConfig, fetchPresets, fetchPreset } from "../api/client";
+import { startRun, deleteRun, bulkDeleteRuns, fetchPresets, fetchPreset, fetchEvalPresets, fetchFlopsBudgets } from "../api/client";
 import { RunPage } from "../components/RunPage";
 
 export function RunContainer() {
@@ -15,16 +15,20 @@ export function RunContainer() {
   const runs = useRuns();
 
   // New run state
-  const [config, setConfig] = useState<Record<string, unknown> | null>(null);
-  const [presets, setPresets] = useState<{ name: string; label: string }[]>([]);
-  const [activePreset, setActivePreset] = useState("default");
+  const [presets, setPresets] = useState<{ name: string; label: string; description?: string }[]>([]);
+  const [activePreset, setActivePreset] = useState("improved-mamba3");
+  const [evalPresets, setEvalPresets] = useState<{ name: string; label: string }[]>([]);
+  const [activeEvalPreset, setActiveEvalPreset] = useState("standard");
+  const [flopsBudgets, setFlopsBudgets] = useState<{ name: string; label: string }[]>([]);
+  const [activeFlopsBudget, setActiveFlopsBudget] = useState("standard");
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (sub === "new") {
-      fetchConfig().then(setConfig).catch((e) => console.warn("Failed to fetch config:", e));
       fetchPresets().then(setPresets).catch((e) => console.warn("Failed to fetch presets:", e));
+      fetchEvalPresets().then(setEvalPresets).catch((e) => console.warn("Failed to fetch eval presets:", e));
+      fetchFlopsBudgets().then(setFlopsBudgets).catch((e) => console.warn("Failed to fetch FLOPs budgets:", e));
     }
   }, [sub]);
 
@@ -58,27 +62,19 @@ export function RunContainer() {
 
   function handlePresetChange(name: string) {
     setActivePreset(name);
-    fetchPreset(name).then(setConfig).catch((e) => console.warn("Failed to fetch preset:", e));
   }
 
-  function updateConfig(section: string, key: string, value: unknown) {
-    if (!config) return;
-    setConfig({
-      ...config,
-      [section]: { ...(config[section] as Record<string, unknown>), [key]: value },
-    });
-  }
-
-  function updateTopLevel(key: string, value: unknown) {
-    if (!config) return;
-    setConfig({ ...config, [key]: value });
+  function handleEvalPresetChange(name: string) {
+    setActiveEvalPreset(name);
   }
 
   async function handleStart() {
     setStarting(true);
     setError(null);
     try {
-      const result = await startRun(config ?? undefined);
+      // Fetch the selected preset config, then merge eval preset name and start
+      const config = await fetchPreset(activePreset);
+      const result = await startRun({ ...config, eval_preset: activeEvalPreset, flops_budget: activeFlopsBudget });
       setActiveRunId(result.run_id);
       navigateTo("train", "metrics");
     } catch (err) {
@@ -94,12 +90,15 @@ export function RunContainer() {
       runs={runs}
       onSelectRun={selectRun}
       status={status}
-      config={config}
       presets={presets}
       activePreset={activePreset}
       onPresetChange={handlePresetChange}
-      onConfigChange={updateConfig}
-      onTopLevelChange={updateTopLevel}
+      evalPresets={evalPresets}
+      activeEvalPreset={activeEvalPreset}
+      onEvalPresetChange={handleEvalPresetChange}
+      flopsBudgets={flopsBudgets}
+      activeFlopsBudget={activeFlopsBudget}
+      onFlopsBudgetChange={setActiveFlopsBudget}
       starting={starting}
       error={error}
       onStart={handleStart}

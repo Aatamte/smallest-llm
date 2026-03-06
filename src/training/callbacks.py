@@ -85,6 +85,9 @@ class EvalCallback(CallbackBase):
         self.eval_db = eval_db
         self.run_id = run_id
         self.model_name = model_name
+        # Track previous eval for marginal efficiency
+        self._prev_composite: float | None = None
+        self._prev_flops: float | None = None
 
     def on_eval_end(self, trainer: Trainer, step: int, metrics: dict) -> None:
         if step == 0 or step % self.eval_interval != 0:
@@ -145,6 +148,29 @@ class EvalCallback(CallbackBase):
             for metric_key, value in result.metrics.items():
                 eval_metrics[f"eval/{task_name}/{metric_key}"] = value
             eval_broadcast[task_name] = result.metrics
+
+        # Composite eval score: average all accuracy-type metrics
+        accuracy_values = [
+            v for k, v in eval_metrics.items()
+            if k.endswith("/accuracy")
+        ]
+        if accuracy_values:
+            composite = sum(accuracy_values) / len(accuracy_values)
+            eval_metrics["eval/composite"] = round(composite, 4)
+
+            flops_now = trainer.flops_total
+            # Marginal efficiency: Δcomposite / ΔFLOPs (per PFLOPs)
+            # Starts high, converges toward zero as gains diminish
+            if self._prev_composite is not None and self._prev_flops is not None:
+                d_composite = composite - self._prev_composite
+                d_flops = flops_now - self._prev_flops
+                if d_flops > 0:
+                    # Scale by 1e15 so values are "accuracy gain per PFLOP"
+                    marginal = d_composite / (d_flops / 1e15)
+                    eval_metrics["eval/marginal_efficiency"] = round(marginal, 6)
+
+            self._prev_composite = composite
+            self._prev_flops = flops_now
 
         if eval_metrics and trainer.logger:
             trainer.logger.log_step(eval_metrics, step=step)

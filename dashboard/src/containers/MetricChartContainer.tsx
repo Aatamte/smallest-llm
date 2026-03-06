@@ -11,6 +11,7 @@ export interface MetricChartContainerProps {
   color: string;
   format?: (v: number) => string;
   sub?: string;
+  allowLog?: boolean;
 }
 
 export function MetricChartContainer({
@@ -19,6 +20,7 @@ export function MetricChartContainer({
   color,
   format = (v) => v.toFixed(4),
   sub,
+  allowLog,
 }: MetricChartContainerProps) {
   const runId = useAtomValue(activeRunIdAtom);
 
@@ -47,6 +49,7 @@ export function MetricChartContainer({
       valueColor={color}
       sub={sub}
       traces={traces}
+      allowLog={allowLog}
     />
   );
 }

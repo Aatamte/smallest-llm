@@ -408,6 +408,31 @@ body {
   margin-bottom: 4px;
 }
 
+.metric-log-toggle {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.metric-log-toggle:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+.metric-log-toggle.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.1);
+}
+
 .metric-chart-value {
   font-size: 18px;
   font-weight: 700;
@@ -1749,4 +1774,87 @@ body {
   font-size: 0.8rem;
   margin-top: 8px;
   text-align: center;
+}
+
+/* ── Compare Runs Selector ───────────────────────────── */
+
+.compare-selector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  position: relative;
+}
+
+.compare-selector-btn {
+  background: var(--surface);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.compare-selector-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.compare-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  border: 1px solid;
+  border-radius: 10px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+
+.compare-pill-x {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+  opacity: 0.6;
+}
+
+.compare-pill-x:hover {
+  opacity: 1;
+}
+
+.compare-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px;
+  min-width: 240px;
+  max-height: 300px;
+  overflow-y: auto;
+  margin-top: 4px;
+}
+
+.compare-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-dim);
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.compare-dropdown-item:hover {
+  background: #1a1a2e;
+  color: var(--text);
 }

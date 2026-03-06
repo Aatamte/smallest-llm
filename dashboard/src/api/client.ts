@@ -52,6 +52,24 @@ export async function fetchPreset(name: string): Promise<Record<string, unknown>
   return res.json();
 }
 
+export async function fetchFlopsBudgets(): Promise<{ name: string; label: string }[]> {
+  const res = await fetch(`${API_BASE}/flops-budgets`);
+  if (!res.ok) throw new Error(`Failed to fetch FLOPs budgets: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchEvalPresets(): Promise<{ name: string; label: string }[]> {
+  const res = await fetch(`${API_BASE}/eval-presets`);
+  if (!res.ok) throw new Error(`Failed to fetch eval presets: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchEvalPreset(name: string): Promise<Record<string, unknown>> {
+  const res = await fetch(`${API_BASE}/eval-presets/${encodeURIComponent(name)}`);
+  if (!res.ok) throw new Error(`Failed to fetch eval preset: ${res.status}`);
+  return res.json();
+}
+
 export async function fetchTrainingState(runId: number): Promise<TrainingState> {
   const res = await fetch(`${API_BASE}/runs/${runId}/state`);
   if (!res.ok) throw new Error(`Failed to fetch state: ${res.status}`);

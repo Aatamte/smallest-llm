@@ -15,7 +15,6 @@ are proportionally cheap.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from itertools import cycle
 from typing import TYPE_CHECKING
 
 import torch
@@ -66,12 +65,17 @@ class HydraCallback(CallbackBase):
         self._macro_iter = None
 
     def _next_batch(self, loader, iter_attr: str) -> dict:
-        """Get next batch from an infinite iterator over a loader."""
+        """Get next batch from an infinite iterator over a loader (no caching)."""
         it = getattr(self, iter_attr)
         if it is None:
-            it = iter(cycle(loader))
+            it = iter(loader)
             setattr(self, iter_attr, it)
-        return next(it)
+        try:
+            return next(it)
+        except StopIteration:
+            it = iter(loader)
+            setattr(self, iter_attr, it)
+            return next(it)
 
     def _get_weights(self, step: int) -> tuple[float, float]:
         """Get (micro_weight, macro_weight) for the current step."""

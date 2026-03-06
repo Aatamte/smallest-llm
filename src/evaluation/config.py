@@ -24,7 +24,7 @@ class EvalConfig:
 # Standard eval: the same benchmarks used by SmolLM / LLaMA evals.
 STANDARD_EVAL = EvalConfig(
     tasks=["hellaswag", "arc_easy", "arc_challenge", "piqa", "winogrande", "mmlu"],
-    max_samples=500,
+    max_samples=100,
     interval=2000,
 )
 

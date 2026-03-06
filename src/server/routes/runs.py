@@ -108,12 +108,37 @@ def get_active_run():
 async def start_training_run(request: Request):
     """Start a training run, optionally with a custom config."""
     from src.config.base import ExperimentConfig
+    from src.evaluation.config import get_eval_preset
 
     body = await request.body()
     config = None
     if body:
         data = json.loads(body)
+        # Apply eval preset if specified
+        eval_preset_name = data.pop("eval_preset", None)
+        # Apply FLOPs budget override if specified
+        flops_budget_name = data.pop("flops_budget", None)
         config = ExperimentConfig.from_dict(data)
+        if eval_preset_name:
+            eval_preset = get_eval_preset(eval_preset_name)
+            if eval_preset:
+                config.training.eval_tasks = len(eval_preset.tasks) > 0
+                config.training.eval_tasks_list = ",".join(eval_preset.tasks)
+                config.training.eval_tasks_interval = eval_preset.interval
+                config.training.eval_tasks_max_samples = eval_preset.max_samples or 0
+        if flops_budget_name:
+            from src.config.presets import get_flops_budget
+            budget = get_flops_budget(flops_budget_name)
+            if budget is not None:
+                # Scale stage budgets proportionally if stages exist
+                old_budget = config.training.max_flops
+                config.training.max_flops = budget
+                config.training.max_steps = 0
+                if config.stages and old_budget and old_budget > 0:
+                    ratio = budget / old_budget
+                    for stage in config.stages:
+                        if stage.max_flops is not None:
+                            stage.max_flops *= ratio
 
     try:
         run_id = run_manager.start(config=config)

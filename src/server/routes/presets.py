@@ -29,3 +29,10 @@ def get_preset_config(name: str):
     if preset is None:
         raise HTTPException(status_code=404, detail=f"Preset '{name}' not found")
     return preset.to_dict()
+
+
+@router.get("/api/flops-budgets")
+def list_flops_budgets():
+    """Return list of available FLOPs budget options."""
+    from src.config.presets import get_flops_budgets
+    return get_flops_budgets()

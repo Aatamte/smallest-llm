@@ -77,10 +77,11 @@ class TrainingConfig:
     multi_token: bool = False
     multi_token_n_ahead: int = 4
     multi_token_weights: str = "1.0,0.5,0.25,0.125"
+    eval_loss: bool = True  # compute validation loss during training
     eval_tasks: bool = True  # run eval tasks during training
-    eval_tasks_interval: int = 2000  # run evals every N steps
+    eval_tasks_interval: int = 500  # run evals every N steps
     eval_tasks_list: str = STANDARD_EVAL_TASKS  # comma-separated task names
-    eval_tasks_max_samples: int = 500  # cap samples per task for speed (0 = all)
+    eval_tasks_max_samples: int = 100  # cap samples per task for speed (0 = all)
 
 
 @dataclass

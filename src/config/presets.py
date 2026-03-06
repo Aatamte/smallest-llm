@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
-
 from src.config.base import (
     DataConfig,
     ExperimentConfig,
@@ -14,160 +12,120 @@ from src.config.base import (
     TrainingConfig,
 )
 
-# ── Shared stage definitions ─────────────────────────────────────────────────
+# ── Global FLOPs budgets ─────────────────────────────────────────────────────
+# Compute-matched budgets for fair architecture comparison on MacBook Pro (MPS).
+# Training stops when the cumulative FLOPs reach the budget.
 
-PRODUCTION_STAGES = [
-    StageConfig(
-        name="sanity",
-        max_steps=50,
-        seq_len=64,
-        dataset_name="tiny_stories",
-        lr=3e-3,
-        warmup_steps=0,
-        overfit_batches=1,
-        loss_threshold=0.5,
-        eval_interval=25,
-        log_interval=5,
-        save_interval=50,
-        eval_enabled=False,
-    ),
-    StageConfig(
-        name="foundation",
-        max_steps=20000,
-        seq_len=256,
-        dataset_name="tiny_stories",
-        lr=3e-3,
-        warmup_steps=500,
-        eval_interval=1000,
-        log_interval=10,
-        save_interval=5000,
-    ),
-    StageConfig(
-        name="extension",
-        max_steps=20000,
-        seq_len=512,
-        dataset_name="minipile",
-        lr=1.5e-3,
-        warmup_steps=200,
-        eval_interval=1000,
-        log_interval=10,
-        save_interval=5000,
-    ),
-    StageConfig(
-        name="refinement",
-        max_steps=10000,
-        seq_len=512,
-        dataset_name="openwebtext",
-        lr=5e-4,
-        warmup_steps=100,
-        min_lr_ratio=0.01,
-        eval_interval=1000,
-        log_interval=10,
-        save_interval=5000,
-    ),
-]
+FLOPS_QUICK = 1e14        # ~1 min   — fast iteration, architecture screening
+FLOPS_STANDARD = 1e15     # ~8 min   — meaningful training, hyperparam search
+FLOPS_FULL = 1e16         # ~1.5 hr  — serious training, benchmark comparisons
+FLOPS_PRODUCTION = 5e16   # ~7 hr    — final models, push for best results
 
-STAGES_20M = [
-    StageConfig(
-        name="sanity",
-        max_steps=50,
-        seq_len=64,
-        dataset_name="tiny_stories",
-        lr=5e-3,
-        warmup_steps=0,
-        overfit_batches=1,
-        loss_threshold=0.5,
-        eval_interval=25,
-        log_interval=5,
-        save_interval=50,
-        eval_enabled=False,
-    ),
-    StageConfig(
-        name="foundation",
-        max_steps=8000,
-        seq_len=256,
-        dataset_name="tiny_stories",
-        lr=5e-3,
-        warmup_steps=200,
-        eval_interval=500,
-        log_interval=10,
-        save_interval=2000,
-    ),
-    StageConfig(
-        name="extension",
-        max_steps=8000,
-        seq_len=512,
-        dataset_name="minipile",
-        lr=3e-3,
-        warmup_steps=100,
-        eval_interval=500,
-        log_interval=10,
-        save_interval=2000,
-    ),
-    StageConfig(
-        name="refinement",
-        max_steps=4000,
-        seq_len=512,
-        dataset_name="openwebtext",
-        lr=1e-3,
-        warmup_steps=50,
-        min_lr_ratio=0.01,
-        eval_interval=500,
-        log_interval=10,
-        save_interval=2000,
-    ),
-]
+FLOPS_BUDGETS: dict[str, float] = {
+    "quick": FLOPS_QUICK,
+    "standard": FLOPS_STANDARD,
+    "full": FLOPS_FULL,
+    "production": FLOPS_PRODUCTION,
+}
 
-FULL_STAGES = [
-    StageConfig(
-        name="sanity",
-        max_steps=50,
-        seq_len=32,
-        dataset_name="tiny_stories",
-        lr=1e-3,
-        warmup_steps=0,
-        overfit_batches=1,
-        loss_threshold=0.5,
-        eval_interval=25,
-        log_interval=5,
-        save_interval=50,
-        eval_enabled=False,
-    ),
-    StageConfig(
-        name="foundation",
-        max_steps=2000,
-        seq_len=64,
-        dataset_name="tiny_stories",
-        lr=1e-3,
-        warmup_steps=100,
-        eval_interval=100,
-        log_interval=10,
-        save_interval=500,
-    ),
-    StageConfig(
-        name="extension",
-        max_steps=2000,
-        seq_len=128,
-        dataset_name="minipile",
-        lr=5e-4,
-        warmup_steps=50,
-        eval_interval=100,
-        log_interval=10,
-        save_interval=500,
-    ),
-    StageConfig(
-        name="refinement",
-        max_steps=1000,
-        seq_len=256,
-        dataset_name="openwebtext",
-        lr=1e-4,
-        warmup_steps=25,
-        min_lr_ratio=0.01,
-        eval_interval=100,
-        log_interval=10,
-        save_interval=500,
-    ),
-]
+FLOPS_BUDGET_LABELS: dict[str, str] = {
+    "quick": "Quick (1e14 FLOPs, ~1 min)",
+    "standard": "Standard (1e15 FLOPs, ~8 min)",
+    "full": "Full (1e16 FLOPs, ~1.5 hr)",
+    "production": "Production (5e16 FLOPs, ~7 hr)",
+}
+
+
+def get_flops_budgets() -> list[dict[str, str]]:
+    """Return list of {name, label} for FLOPs budget options."""
+    return [{"name": k, "label": FLOPS_BUDGET_LABELS[k]} for k in FLOPS_BUDGETS]
+
+
+def get_flops_budget(name: str) -> float | None:
+    """Return FLOPs value for a named budget, or None."""
+    return FLOPS_BUDGETS.get(name)
+
+# ── Stage builders ───────────────────────────────────────────────────────────
+# Stages split a FLOPs budget proportionally. Sanity stages stay step-based.
+
+
+def make_full_stages(budget: float) -> list[StageConfig]:
+    """Stages for ~2M models: short seqs, simple datasets."""
+    return [
+        StageConfig(
+            name="sanity", max_steps=50, seq_len=32, dataset_name="tiny_stories",
+            lr=1e-3, warmup_steps=0, overfit_batches=1, loss_threshold=0.5,
+            eval_interval=25, log_interval=5, save_interval=50, eval_enabled=False,
+        ),
+        StageConfig(
+            name="foundation", max_steps=0, max_flops=budget * 0.4,
+            seq_len=64, dataset_name="tiny_stories", lr=1e-3, warmup_steps=100,
+            eval_interval=100, log_interval=10, save_interval=500,
+        ),
+        StageConfig(
+            name="extension", max_steps=0, max_flops=budget * 0.4,
+            seq_len=128, dataset_name="minipile", lr=5e-4, warmup_steps=50,
+            eval_interval=100, log_interval=10, save_interval=500,
+        ),
+        StageConfig(
+            name="refinement", max_steps=0, max_flops=budget * 0.2,
+            seq_len=256, dataset_name="openwebtext", lr=1e-4, warmup_steps=25,
+            min_lr_ratio=0.01, eval_interval=100, log_interval=10, save_interval=500,
+        ),
+    ]
+
+
+def make_20m_stages(budget: float) -> list[StageConfig]:
+    """Stages for ~20M models: longer seqs, higher LRs."""
+    return [
+        StageConfig(
+            name="sanity", max_steps=50, seq_len=64, dataset_name="tiny_stories",
+            lr=5e-3, warmup_steps=0, overfit_batches=1, loss_threshold=0.5,
+            eval_interval=25, log_interval=5, save_interval=50, eval_enabled=False,
+        ),
+        StageConfig(
+            name="foundation", max_steps=0, max_flops=budget * 0.4,
+            seq_len=256, dataset_name="tiny_stories", lr=5e-3, warmup_steps=200,
+            eval_interval=500, log_interval=10, save_interval=2000,
+        ),
+        StageConfig(
+            name="extension", max_steps=0, max_flops=budget * 0.4,
+            seq_len=512, dataset_name="minipile", lr=3e-3, warmup_steps=100,
+            eval_interval=500, log_interval=10, save_interval=2000,
+        ),
+        StageConfig(
+            name="refinement", max_steps=0, max_flops=budget * 0.2,
+            seq_len=512, dataset_name="openwebtext", lr=1e-3, warmup_steps=50,
+            min_lr_ratio=0.01, eval_interval=500, log_interval=10, save_interval=2000,
+        ),
+    ]
+
+
+def make_production_stages(budget: float) -> list[StageConfig]:
+    """Stages for ~30M production models: long seqs, careful LR schedule."""
+    return [
+        StageConfig(
+            name="sanity", max_steps=50, seq_len=64, dataset_name="tiny_stories",
+            lr=3e-3, warmup_steps=0, overfit_batches=1, loss_threshold=0.5,
+            eval_interval=25, log_interval=5, save_interval=50, eval_enabled=False,
+        ),
+        StageConfig(
+            name="foundation", max_steps=0, max_flops=budget * 0.4,
+            seq_len=256, dataset_name="tiny_stories", lr=3e-3, warmup_steps=500,
+            eval_interval=1000, log_interval=10, save_interval=5000,
+        ),
+        StageConfig(
+            name="extension", max_steps=0, max_flops=budget * 0.4,
+            seq_len=512, dataset_name="minipile", lr=1.5e-3, warmup_steps=200,
+            eval_interval=1000, log_interval=10, save_interval=5000,
+        ),
+        StageConfig(
+            name="refinement", max_steps=0, max_flops=budget * 0.2,
+            seq_len=512, dataset_name="openwebtext", lr=5e-4, warmup_steps=100,
+            min_lr_ratio=0.01, eval_interval=1000, log_interval=10, save_interval=5000,
+        ),
+    ]
+
 
 # ── Model configs ─────────────────────────────────────────────────────────────
 
@@ -199,7 +157,6 @@ IMPROVED_MAMBA3_20M_MODEL = ModelConfig(
         "gradient_checkpointing": True,
     },
 )
-
 
 TRANSFORMER_10M_MODEL = ModelConfig(
     name="transformer",
@@ -273,221 +230,153 @@ MUON_OPTIMIZER = OptimizerConfig(name="muon", lr=0.02, beta1=0.95, grad_clip_nor
 MUON_20M_OPTIMIZER = OptimizerConfig(name="muon", lr=0.005, beta1=0.95, grad_clip_norm=0.0)
 MUON_PRODUCTION_OPTIMIZER = OptimizerConfig(name="muon", lr=0.003, beta1=0.95, grad_clip_norm=0.0)
 
-# ── Training configs ──────────────────────────────────────────────────────────
+# ── Training configs (FLOPs-based) ───────────────────────────────────────────
+# Default budgets per model size tier. Overridden by the FLOPs budget selector.
 
-QUICK_TRAINING = TrainingConfig(
-    max_steps=200,
-    eval_interval=50,
-    log_interval=5,
-    save_interval=100,
+TRAINING_SMALL = TrainingConfig(
+    max_steps=0, max_flops=FLOPS_STANDARD,
+    eval_interval=100, log_interval=10, save_interval=500,
+    eval_loss=False, multi_token=True, multi_token_n_ahead=4,
 )
-FULL_TRAINING = TrainingConfig(
-    max_steps=5050,
-    eval_interval=100,
-    log_interval=10,
-    save_interval=500,
+TRAINING_MEDIUM = TrainingConfig(
+    max_steps=0, max_flops=FLOPS_FULL,
+    eval_interval=500, log_interval=10, save_interval=2000,
+    mixed_precision=True, eval_loss=False, multi_token=True, multi_token_n_ahead=4,
 )
-PRODUCTION_TRAINING = TrainingConfig(
-    max_steps=50_000,
-    eval_interval=1000,
-    log_interval=10,
-    save_interval=5000,
-    mixed_precision=True,
-    compile_model=True,
+TRAINING_LARGE = TrainingConfig(
+    max_steps=0, max_flops=FLOPS_PRODUCTION,
+    eval_interval=1000, log_interval=10, save_interval=5000,
+    mixed_precision=True, compile_model=True, eval_loss=False, multi_token=True, multi_token_n_ahead=4,
 )
-TRAINING_20M = TrainingConfig(
-    max_steps=20_000,
-    eval_interval=500,
-    log_interval=10,
-    save_interval=2000,
-    mixed_precision=True,
-)
-
-# ── Helper ────────────────────────────────────────────────────────────────────
-
-
-def _quick(name: str, model: ModelConfig, optimizer: OptimizerConfig = ADAMW_OPTIMIZER) -> ExperimentConfig:
-    return ExperimentConfig(
-        name=name,
-        model=model,
-        data=QUICK_DATA,
-        training=QUICK_TRAINING,
-        optimizer=optimizer,
-        scheduler=SchedulerConfig(warmup_steps=20),
-    )
-
-
-def _full(name: str, model: ModelConfig, optimizer: OptimizerConfig = ADAMW_OPTIMIZER) -> ExperimentConfig:
-    return ExperimentConfig(
-        name=name,
-        model=model,
-        data=FULL_DATA,
-        training=FULL_TRAINING,
-        optimizer=optimizer,
-        scheduler=SchedulerConfig(warmup_steps=100),
-        stages=deepcopy(FULL_STAGES),
-    )
-
 
 # ── Presets ───────────────────────────────────────────────────────────────────
+# One preset per architecture. FLOPs budget is selected separately in the UI.
 
 PRESETS: dict[str, ExperimentConfig] = {
-    # Transformer
-    "quick-transformer": _quick("quick-transformer", TRANSFORMER_MODEL),
-    "full-transformer": ExperimentConfig(
-        name="full-transformer",
+    "transformer": ExperimentConfig(
+        name="transformer",
         model=TRANSFORMER_MODEL,
         data=FULL_DATA,
         training=TrainingConfig(
-            max_steps=5050,
-            eval_interval=100,
-            log_interval=10,
-            save_interval=500,
-            multi_token=True,
-            multi_token_n_ahead=4,
+            max_steps=0, max_flops=FLOPS_STANDARD,
+            eval_interval=100, log_interval=10, save_interval=500,
+            multi_token=True, multi_token_n_ahead=4, eval_loss=False,
         ),
         optimizer=ADAMW_OPTIMIZER,
         scheduler=SchedulerConfig(warmup_steps=100),
-        stages=deepcopy(FULL_STAGES),
+        stages=make_full_stages(FLOPS_STANDARD),
     ),
-    # Mamba
-    "quick-mamba": _quick("quick-mamba", MAMBA_MODEL),
-    "full-mamba": _full("full-mamba", MAMBA_MODEL),
-    # Mamba-2
-    "quick-mamba2": _quick("quick-mamba2", MAMBA2_MODEL),
-    "full-mamba2": _full("full-mamba2", MAMBA2_MODEL),
-    # Mamba-3
-    "quick-mamba3": _quick("quick-mamba3", MAMBA3_MODEL),
-    "full-mamba3": _full("full-mamba3", MAMBA3_MODEL),
-    # Improved Mamba-3 (uses Muon optimizer)
-    "quick-improved-mamba3": _quick("quick-improved-mamba3", IMPROVED_MAMBA3_MODEL, MUON_OPTIMIZER),
-    "full-improved-mamba3": _full("full-improved-mamba3", IMPROVED_MAMBA3_MODEL, MUON_OPTIMIZER),
-    # 20M Improved Mamba-3
-    "quick-20m": ExperimentConfig(
-        name="quick-20m",
-        model=IMPROVED_MAMBA3_20M_MODEL,
-        data=DataConfig(dataset_name="tiny_stories", tokenizer_name="byte", max_seq_len=256, batch_size=16, max_eval_batches=50),
-        training=TrainingConfig(max_steps=500, eval_interval=100, log_interval=5, save_interval=250, mixed_precision=True),
-        optimizer=MUON_20M_OPTIMIZER,
-        scheduler=SchedulerConfig(warmup_steps=50),
+    "mamba": ExperimentConfig(
+        name="mamba",
+        model=MAMBA_MODEL,
+        data=FULL_DATA,
+        training=TRAINING_SMALL,
+        optimizer=ADAMW_OPTIMIZER,
+        scheduler=SchedulerConfig(warmup_steps=100),
+        stages=make_full_stages(FLOPS_STANDARD),
     ),
-    "full-20m": ExperimentConfig(
-        name="full-20m",
+    "mamba2": ExperimentConfig(
+        name="mamba2",
+        model=MAMBA2_MODEL,
+        data=FULL_DATA,
+        training=TRAINING_SMALL,
+        optimizer=ADAMW_OPTIMIZER,
+        scheduler=SchedulerConfig(warmup_steps=100),
+        stages=make_full_stages(FLOPS_STANDARD),
+    ),
+    "mamba3": ExperimentConfig(
+        name="mamba3",
+        model=MAMBA3_MODEL,
+        data=FULL_DATA,
+        training=TRAINING_SMALL,
+        optimizer=ADAMW_OPTIMIZER,
+        scheduler=SchedulerConfig(warmup_steps=100),
+        stages=make_full_stages(FLOPS_STANDARD),
+    ),
+    "improved-mamba3": ExperimentConfig(
+        name="improved-mamba3",
+        model=IMPROVED_MAMBA3_MODEL,
+        data=FULL_DATA,
+        training=TRAINING_SMALL,
+        optimizer=MUON_OPTIMIZER,
+        scheduler=SchedulerConfig(warmup_steps=100),
+        stages=make_full_stages(FLOPS_STANDARD),
+    ),
+    "improved-mamba3-20m": ExperimentConfig(
+        name="improved-mamba3-20m",
         model=IMPROVED_MAMBA3_20M_MODEL,
         data=DATA_20M,
-        training=TRAINING_20M,
+        training=TRAINING_MEDIUM,
         optimizer=MUON_20M_OPTIMIZER,
         scheduler=SchedulerConfig(warmup_steps=200),
-        stages=deepcopy(STAGES_20M),
+        stages=make_20m_stages(FLOPS_FULL),
     ),
-    # Production 30M
-    "production-quick": ExperimentConfig(
-        name="production-quick",
-        model=PRODUCTION_MODEL,
-        data=DataConfig(dataset_name="tiny_stories", tokenizer_name="byte", max_seq_len=256, batch_size=12, max_eval_batches=50),
-        training=TrainingConfig(max_steps=500, eval_interval=100, log_interval=5, save_interval=250),
-        optimizer=MUON_PRODUCTION_OPTIMIZER,
-        scheduler=SchedulerConfig(warmup_steps=50),
-    ),
-    "production-full": ExperimentConfig(
-        name="production-full",
+    "production-30m": ExperimentConfig(
+        name="production-30m",
         model=PRODUCTION_MODEL,
         data=PRODUCTION_DATA,
-        training=PRODUCTION_TRAINING,
+        training=TRAINING_LARGE,
         optimizer=MUON_PRODUCTION_OPTIMIZER,
         scheduler=SchedulerConfig(warmup_steps=500),
-        stages=deepcopy(PRODUCTION_STAGES),
+        stages=make_production_stages(FLOPS_PRODUCTION),
     ),
-    # Transformer 10M
-    "quick-transformer-10m": ExperimentConfig(
-        name="quick-transformer-10m",
-        model=TRANSFORMER_10M_MODEL,
-        data=DataConfig(dataset_name="tiny_stories", tokenizer_name="byte", max_seq_len=256, batch_size=16, max_eval_batches=50),
-        training=TrainingConfig(max_steps=500, eval_interval=100, log_interval=5, save_interval=250, multi_token=True, multi_token_n_ahead=4),
-        optimizer=ADAMW_OPTIMIZER,
-        scheduler=SchedulerConfig(warmup_steps=50),
-    ),
-    "full-transformer-10m": ExperimentConfig(
-        name="full-transformer-10m",
+    "transformer-10m": ExperimentConfig(
+        name="transformer-10m",
         model=TRANSFORMER_10M_MODEL,
         data=DATA_20M,
         training=TrainingConfig(
-            max_steps=20_000, eval_interval=500, log_interval=10, save_interval=2000,
-            multi_token=True, multi_token_n_ahead=4,
+            max_steps=0, max_flops=FLOPS_FULL,
+            eval_interval=500, log_interval=10, save_interval=2000,
+            multi_token=True, multi_token_n_ahead=4, eval_loss=False,
         ),
         optimizer=ADAMW_OPTIMIZER,
         scheduler=SchedulerConfig(warmup_steps=200),
-        stages=deepcopy(STAGES_20M),
+        stages=make_20m_stages(FLOPS_FULL),
     ),
-    # MoE Transformer (sparse MoE FFN, 4 experts top-1)
-    "quick-moe-2m": ExperimentConfig(
-        name="quick-moe-2m",
-        model=MOE_2M_MODEL,
-        data=DataConfig(dataset_name="tiny_stories", tokenizer_name="byte", max_seq_len=128, batch_size=32, max_eval_batches=50, num_workers=2),
-        training=TrainingConfig(max_steps=500, eval_interval=100, log_interval=5, save_interval=250, mixed_precision=True, multi_token=True, multi_token_n_ahead=4),
-        optimizer=ADAMW_OPTIMIZER,
-        scheduler=SchedulerConfig(warmup_steps=50),
-    ),
-    "full-moe-2m": ExperimentConfig(
-        name="full-moe-2m",
+    "moe-2m": ExperimentConfig(
+        name="moe-2m",
         model=MOE_2M_MODEL,
         data=DataConfig(dataset_name="tiny_stories", tokenizer_name="byte", max_seq_len=256, batch_size=32, max_eval_batches=50, num_workers=2),
         training=TrainingConfig(
-            max_steps=5050, eval_interval=100, log_interval=10, save_interval=500,
-            mixed_precision=True, multi_token=True, multi_token_n_ahead=4,
+            max_steps=0, max_flops=FLOPS_STANDARD,
+            eval_interval=100, log_interval=10, save_interval=500,
+            mixed_precision=True, multi_token=True, multi_token_n_ahead=4, eval_loss=False,
         ),
         optimizer=ADAMW_OPTIMIZER,
         scheduler=SchedulerConfig(warmup_steps=100),
-        stages=deepcopy(FULL_STAGES),
+        stages=make_full_stages(FLOPS_STANDARD),
     ),
-    # Modern Transformer 2M (LLaMA-style: RoPE, RMSNorm, SwiGLU, GQA)
-    "quick-modern-2m": ExperimentConfig(
-        name="quick-modern-2m",
-        model=MODERN_2M_MODEL,
-        data=DataConfig(dataset_name="tiny_stories", tokenizer_name="byte", max_seq_len=128, batch_size=32, max_eval_batches=50, num_workers=2),
-        training=TrainingConfig(max_steps=500, eval_interval=100, log_interval=5, save_interval=250, mixed_precision=True, multi_token=True, multi_token_n_ahead=4),
-        optimizer=ADAMW_OPTIMIZER,
-        scheduler=SchedulerConfig(warmup_steps=50),
-    ),
-    "full-modern-2m": ExperimentConfig(
-        name="full-modern-2m",
+    "modern-2m": ExperimentConfig(
+        name="modern-2m",
         model=MODERN_2M_MODEL,
         data=DataConfig(dataset_name="tiny_stories", tokenizer_name="byte", max_seq_len=256, batch_size=32, max_eval_batches=50, num_workers=2),
         training=TrainingConfig(
-            max_steps=5050, eval_interval=100, log_interval=10, save_interval=500,
-            mixed_precision=True, multi_token=True, multi_token_n_ahead=4,
+            max_steps=0, max_flops=FLOPS_STANDARD,
+            eval_interval=100, log_interval=10, save_interval=500,
+            mixed_precision=True, multi_token=True, multi_token_n_ahead=4, eval_loss=False,
         ),
         optimizer=ADAMW_OPTIMIZER,
         scheduler=SchedulerConfig(warmup_steps=100),
-        stages=deepcopy(FULL_STAGES),
+        stages=make_full_stages(FLOPS_STANDARD),
     ),
-    # Modern Transformer 10M (LLaMA-style: RoPE, RMSNorm, SwiGLU, GQA)
-    "quick-modern-10m": ExperimentConfig(
-        name="quick-modern-10m",
-        model=MODERN_10M_MODEL,
-        data=DataConfig(dataset_name="tiny_stories", tokenizer_name="byte", max_seq_len=256, batch_size=16, max_eval_batches=50, num_workers=2),
-        training=TrainingConfig(max_steps=500, eval_interval=100, log_interval=5, save_interval=250, mixed_precision=True, multi_token=True, multi_token_n_ahead=4),
-        optimizer=ADAMW_OPTIMIZER,
-        scheduler=SchedulerConfig(warmup_steps=50),
-    ),
-    "full-modern-10m": ExperimentConfig(
-        name="full-modern-10m",
+    "modern-10m": ExperimentConfig(
+        name="modern-10m",
         model=MODERN_10M_MODEL,
         data=DataConfig(dataset_name="tiny_stories", tokenizer_name="byte", max_seq_len=512, batch_size=16, max_eval_batches=50, num_workers=2),
         training=TrainingConfig(
-            max_steps=20_000, eval_interval=500, log_interval=10, save_interval=2000,
-            mixed_precision=True, multi_token=True, multi_token_n_ahead=4,
+            max_steps=0, max_flops=FLOPS_FULL,
+            eval_interval=500, log_interval=10, save_interval=2000,
+            mixed_precision=True, multi_token=True, multi_token_n_ahead=4, eval_loss=False,
         ),
         optimizer=ADAMW_OPTIMIZER,
         scheduler=SchedulerConfig(warmup_steps=200),
-        stages=deepcopy(STAGES_20M),
+        stages=make_20m_stages(FLOPS_FULL),
     ),
-    # Utility
     "sanity-check": ExperimentConfig(
         name="sanity-check",
         model=TRANSFORMER_MODEL,
         data=DataConfig(dataset_name="tiny_stories", tokenizer_name="byte", max_seq_len=32, batch_size=32, max_eval_batches=50),
-        training=TrainingConfig(max_steps=100, eval_interval=10, log_interval=5, save_interval=100),
+        training=TrainingConfig(max_steps=100, eval_interval=10, log_interval=5, save_interval=100, eval_loss=False, multi_token=True, multi_token_n_ahead=4),
         optimizer=ADAMW_OPTIMIZER,
         stages=[
             StageConfig(
@@ -508,31 +397,20 @@ PRESETS: dict[str, ExperimentConfig] = {
     ),
 }
 
-# Human-readable labels for the frontend
+# Human-readable labels — architecture + params only, no FLOPs
 PRESET_LABELS: dict[str, str] = {
-    "quick-transformer": "Transformer Quick (0.86M params, 200 steps)",
-    "full-transformer": "Transformer Full (0.86M params, 4 stages, 5K steps)",
-    "quick-mamba": "Mamba Quick (0.85M params, 200 steps)",
-    "full-mamba": "Mamba Full (0.85M params, 4 stages, 5K steps)",
-    "quick-mamba2": "Mamba-2 Quick (0.85M params, 200 steps)",
-    "full-mamba2": "Mamba-2 Full (0.85M params, 4 stages, 5K steps)",
-    "quick-mamba3": "Mamba-3 Quick (2.14M params, 200 steps)",
-    "full-mamba3": "Mamba-3 Full (2.14M params, 4 stages, 5K steps)",
-    "quick-improved-mamba3": "Improved Mamba-3 Quick (2.14M params, Muon, 200 steps)",
-    "full-improved-mamba3": "Improved Mamba-3 Full (2.14M params, Muon, 4 stages, 5K steps)",
-    "quick-20m": "20M Quick (19.4M params, Muon, 500 steps)",
-    "full-20m": "20M Full (19.4M params, Muon, 4 stages, 20K steps)",
-    "production-quick": "Production Quick (~30M params, Muon, 500 steps)",
-    "production-full": "Production Full (~30M params, Muon, 4 stages, 50K steps)",
-    "quick-transformer-10m": "Transformer 10M Quick (~10M params, multi-token, 500 steps)",
-    "full-transformer-10m": "Transformer 10M Full (~10M params, multi-token, 4 stages, 20K steps)",
-    "quick-moe-2m": "MoE 2M Quick (~5M total/~1.5M active, 4 experts top-1, 500 steps)",
-    "full-moe-2m": "MoE 2M Full (~5M total/~1.5M active, 4 experts top-1, 4 stages, 5K steps)",
-    "quick-modern-2m": "Modern 2M Quick (2M params, RoPE+GQA+SwiGLU, multi-token, 500 steps)",
-    "full-modern-2m": "Modern 2M Full (2M params, RoPE+GQA+SwiGLU, multi-token, 4 stages, 5K steps)",
-    "quick-modern-10m": "Modern 10M Quick (8.8M params, RoPE+GQA+SwiGLU, multi-token, 500 steps)",
-    "full-modern-10m": "Modern 10M Full (8.8M params, RoPE+GQA+SwiGLU, multi-token, 4 stages, 20K steps)",
-    "sanity-check": "Sanity Check (0.86M params, overfit 1 batch)",
+    "transformer": "Transformer (0.86M, multi-token)",
+    "mamba": "Mamba (0.85M)",
+    "mamba2": "Mamba-2 (0.85M)",
+    "mamba3": "Mamba-3 (2.14M)",
+    "improved-mamba3": "Improved Mamba-3 (2.14M, Muon)",
+    "improved-mamba3-20m": "Improved Mamba-3 20M (19.4M, Muon)",
+    "production-30m": "Production Mamba-3 (~30M, Muon)",
+    "transformer-10m": "Transformer 10M (~10M, multi-token)",
+    "moe-2m": "MoE Transformer (~5M/~1.5M active, 4 experts)",
+    "modern-2m": "Modern Transformer 2M (RoPE+GQA+SwiGLU)",
+    "modern-10m": "Modern Transformer 10M (8.8M, RoPE+GQA+SwiGLU)",
+    "sanity-check": "Sanity Check (overfit 1 batch)",
 }
 
 
@@ -540,13 +418,10 @@ def describe_preset(config: ExperimentConfig) -> str:
     """Auto-compute a human-readable description from a preset's config."""
     stages = config.stages
     if not stages:
-        total = config.training.max_steps
-        dataset = config.data.dataset_name
-        return f"{total:,} steps on {dataset}"
+        return f"on {config.data.dataset_name}"
 
-    total = sum(s.max_steps for s in stages)
-    parts = [f"{s.name} ({s.max_steps:,})" for s in stages]
-    return f"{total:,} steps: {' → '.join(parts)}"
+    stage_names = [s.name for s in stages if s.overfit_batches == 0]
+    return " → ".join(stage_names)
 
 
 def get_presets() -> list[dict[str, str]]:

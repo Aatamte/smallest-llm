@@ -240,9 +240,9 @@ def test_preset_sanity_check_has_stages():
     assert config.stages[0].overfit_batches == 1
 
 
-def test_preset_full_transformer_has_four_stages():
-    """The full-transformer preset has 4 stages."""
-    config = get_preset("full-transformer")
+def test_preset_transformer_has_four_stages():
+    """The transformer preset has 4 stages."""
+    config = get_preset("transformer")
     assert config is not None
     assert config.stages is not None
     assert len(config.stages) == 4
@@ -250,9 +250,128 @@ def test_preset_full_transformer_has_four_stages():
     assert names == ["sanity", "foundation", "extension", "refinement"]
 
 
-def test_preset_full_mamba_has_four_stages():
-    """The full-mamba preset has 4 stages."""
-    config = get_preset("full-mamba")
+def test_preset_mamba_has_four_stages():
+    """The mamba preset has 4 stages."""
+    config = get_preset("mamba")
     assert config is not None
     assert config.stages is not None
     assert len(config.stages) == 4
+
+
+# ── FLOPs-based pipeline tests ──────────────────────────
+
+
+def test_flops_single_stage_runs_and_stops():
+    """A single FLOPs-based stage runs, tracks FLOPs, and stops at budget."""
+    trainer, dataset, tok, config = _make_trainer_and_dataset(max_steps=10, seq_len=8, batch_size=2)
+
+    # Compute expected flops per token so we can set a small budget
+    fpt = trainer._compute_flops_per_token()
+    tokens_per_step = 8 * 2  # seq_len * batch_size
+    # Budget for ~5 steps worth of FLOPs
+    budget = fpt * tokens_per_step * 5
+
+    config.stages = [
+        StageConfig(
+            name="flops_stage", max_steps=0, max_flops=budget,
+            seq_len=8, eval_interval=100, log_interval=5, save_interval=100,
+        ),
+    ]
+    runner = PipelineRunner(config, trainer, dataset, tok)
+    runner.run()
+
+    assert trainer.tokens_seen > 0
+    # Should have run roughly 5 steps (± 1 due to rounding and the +1 in sched_steps)
+    steps_run = trainer.tokens_seen // tokens_per_step
+    assert 4 <= steps_run <= 7, f"Expected ~5 steps, got {steps_run}"
+
+
+def test_flops_multi_stage_all_stages_run():
+    """Multiple FLOPs-based stages all execute (not just stage 1)."""
+    trainer, dataset, tok, config = _make_trainer_and_dataset(max_steps=10, seq_len=8, batch_size=2)
+
+    fpt = trainer._compute_flops_per_token()
+    tokens_per_step = 8 * 2
+    stage_budget = fpt * tokens_per_step * 3  # ~3 steps per stage
+
+    config.stages = [
+        StageConfig(
+            name="stage_a", max_steps=0, max_flops=stage_budget,
+            seq_len=8, eval_interval=100, log_interval=5, save_interval=100,
+        ),
+        StageConfig(
+            name="stage_b", max_steps=0, max_flops=stage_budget,
+            seq_len=8, eval_interval=100, log_interval=5, save_interval=100,
+        ),
+    ]
+    runner = PipelineRunner(config, trainer, dataset, tok)
+    runner.run()
+
+    # Both stages should have run: ~3 steps each = ~6 total
+    total_steps = trainer.tokens_seen // tokens_per_step
+    assert total_steps >= 6, f"Expected >=6 steps from 2 stages, got {total_steps}"
+
+
+def test_flops_stage_resets_flops_counter():
+    """Each FLOPs-based stage resets flops_total so budgets are independent."""
+    trainer, dataset, tok, config = _make_trainer_and_dataset(max_steps=10, seq_len=8, batch_size=2)
+
+    fpt = trainer._compute_flops_per_token()
+    tokens_per_step = 8 * 2
+    stage_budget = fpt * tokens_per_step * 3
+
+    config.stages = [
+        StageConfig(
+            name="stage_a", max_steps=0, max_flops=stage_budget,
+            seq_len=8, eval_interval=100, log_interval=5, save_interval=100,
+        ),
+        StageConfig(
+            name="stage_b", max_steps=0, max_flops=stage_budget,
+            seq_len=8, eval_interval=100, log_interval=5, save_interval=100,
+        ),
+    ]
+    runner = PipelineRunner(config, trainer, dataset, tok)
+    runner.run()
+
+    # After the last stage, flops_total should be <= stage_budget (was reset)
+    assert trainer.flops_total <= stage_budget * 1.5, (
+        f"flops_total {trainer.flops_total} should be near stage budget {stage_budget}, not cumulative"
+    )
+
+
+def test_flops_mixed_step_and_flops_stages():
+    """A step-based sanity stage followed by FLOPs-based stages all run."""
+    trainer, dataset, tok, config = _make_trainer_and_dataset(max_steps=20, seq_len=8, batch_size=2)
+
+    fpt = trainer._compute_flops_per_token()
+    tokens_per_step = 8 * 2
+    stage_budget = fpt * tokens_per_step * 3
+
+    config.stages = [
+        # Step-based sanity stage
+        StageConfig(
+            name="sanity", max_steps=3, seq_len=8,
+            eval_interval=3, log_interval=5, save_interval=3, eval_enabled=False,
+        ),
+        # FLOPs-based main stage
+        StageConfig(
+            name="main", max_steps=0, max_flops=stage_budget,
+            seq_len=8, eval_interval=100, log_interval=5, save_interval=100,
+        ),
+    ]
+    runner = PipelineRunner(config, trainer, dataset, tok)
+    runner.run()
+
+    # Sanity (3 steps) + main (~3 steps) = ~6 total
+    total_steps = trainer.tokens_seen // tokens_per_step
+    assert total_steps >= 5, f"Expected >=5 steps from sanity + flops stage, got {total_steps}"
+
+
+def test_flops_estimate_nonzero():
+    """TinyModel's estimate_flops returns nonzero values via base class introspection."""
+    tok = build_tokenizer("char", text=TEXT)
+    model = TinyModel(tok.vocab_size)
+    estimate = model.estimate_flops(seq_len=8)
+    assert estimate.forward > 0, "Forward FLOPs should be nonzero"
+    assert estimate.backward > 0, "Backward FLOPs should be nonzero"
+    assert estimate.total == estimate.forward + estimate.backward

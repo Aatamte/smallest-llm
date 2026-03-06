@@ -32,6 +32,7 @@ class HFStreamingDataset:
     text_field: str
     train_split: str
     val_split: str
+    config: str | None = None  # HF dataset config name (e.g. "cosmopedia-v2")
 
 
 _HF_DATASETS: dict[str, HFStreamingDataset] = {
@@ -49,6 +50,36 @@ _HF_DATASETS: dict[str, HFStreamingDataset] = {
     ),
     "openwebtext": HFStreamingDataset(
         path="Skylion007/openwebtext",
+        text_field="text",
+        train_split="train",
+        val_split="train",  # no dedicated val split
+    ),
+    # SmolLM-Corpus subsets (HuggingFaceTB/smollm-corpus)
+    "cosmopedia_v2": HFStreamingDataset(
+        path="HuggingFaceTB/smollm-corpus",
+        config="cosmopedia-v2",
+        text_field="text",
+        train_split="train",
+        val_split="train",  # no dedicated val split
+    ),
+    "fineweb_edu": HFStreamingDataset(
+        path="HuggingFaceTB/smollm-corpus",
+        config="fineweb-edu-dedup",
+        text_field="text",
+        train_split="train",
+        val_split="train",  # no dedicated val split
+    ),
+    "python_edu": HFStreamingDataset(
+        path="HuggingFaceTB/smollm-corpus",
+        config="python-edu",
+        text_field="text",
+        train_split="train",
+        val_split="train",  # no dedicated val split
+    ),
+    # SmolLM2 math dataset
+    "finemath": HFStreamingDataset(
+        path="HuggingFaceTB/finemath",
+        config="finemath-4plus",
         text_field="text",
         train_split="train",
         val_split="train",  # no dedicated val split

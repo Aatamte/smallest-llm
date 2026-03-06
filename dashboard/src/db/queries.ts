@@ -10,6 +10,10 @@ const METRIC_KEY_MAP: Record<string, string> = {
   tokensSeen: "train/tokens_seen",
   bpc: "train/bpc",
   stepTime: "train/step_time",
+  flopsPct: "train/flops_pct",
+  flopsTotal: "train/flops_total",
+  evalComposite: "eval/composite",
+  evalMarginalEfficiency: "eval/marginal_efficiency",
 };
 
 // ── Run state queries (merged into runs table) ───────
@@ -81,6 +85,30 @@ export function getRunMaxSteps(runId: number | null): number {
     if (!rows[0]?.config) return 0;
     const cfg = JSON.parse(rows[0].config);
     return cfg?.training?.max_steps ?? 0;
+  } catch { return 0; }
+}
+
+export function getRunEvalInterval(runId: number | null): number {
+  if (runId == null) return 0;
+  try {
+    const rows = db.query<{ config: string }>(
+      "SELECT config FROM runs WHERE id = ?", [runId]
+    );
+    if (!rows[0]?.config) return 0;
+    const cfg = JSON.parse(rows[0].config);
+    return cfg?.training?.eval_tasks_interval ?? 0;
+  } catch { return 0; }
+}
+
+export function getRunMaxFlops(runId: number | null): number {
+  if (runId == null) return 0;
+  try {
+    const rows = db.query<{ config: string }>(
+      "SELECT config FROM runs WHERE id = ?", [runId]
+    );
+    if (!rows[0]?.config) return 0;
+    const cfg = JSON.parse(rows[0].config);
+    return cfg?.training?.max_flops ?? 0;
   } catch { return 0; }
 }
 
@@ -213,10 +241,80 @@ export function getLogs(runId: number | null): { id: number; level: string; mess
   } catch { return []; }
 }
 
+// ── Leaderboard queries ───────────────────────────────
+
+export interface LeaderboardEntry {
+  run_id: number;
+  run_name: string;
+  model_name: string;
+  composite: number;
+  flops: number;
+  step: number;
+}
+
+export function getLeaderboard(): LeaderboardEntry[] {
+  try {
+    // Best eval/composite per run, with the FLOPs at that step
+    const rows = db.query<{ run_id: number; step: number; value: number }>(
+      `SELECT m.run_id, m.step, m.value
+       FROM metrics m
+       INNER JOIN (
+         SELECT run_id, MAX(value) as max_val
+         FROM metrics WHERE key = 'eval/composite'
+         GROUP BY run_id
+       ) best ON m.run_id = best.run_id AND m.value = best.max_val
+       WHERE m.key = 'eval/composite'
+       GROUP BY m.run_id
+       ORDER BY m.value DESC`
+    );
+
+    return rows.map((r) => {
+      // Get run name + model name
+      let run_name = `Run #${r.run_id}`;
+      let model_name = "";
+      try {
+        const rr = db.query<{ name: string; config: string }>(
+          "SELECT name, config FROM runs WHERE id = ?", [r.run_id]
+        );
+        if (rr[0]) {
+          run_name = rr[0].name;
+          const cfg = JSON.parse(rr[0].config || "{}");
+          model_name = cfg?.model?.name ?? "";
+        }
+      } catch {}
+
+      // Get FLOPs at that step
+      let flops = 0;
+      try {
+        const fr = db.query<{ value: number }>(
+          "SELECT value FROM metrics WHERE run_id = ? AND key = 'train/flops_total' AND step <= ? ORDER BY step DESC LIMIT 1",
+          [r.run_id, r.step]
+        );
+        flops = fr[0]?.value ?? 0;
+      } catch {}
+
+      return {
+        run_id: r.run_id,
+        run_name,
+        model_name,
+        composite: r.value,
+        flops,
+        step: r.step,
+      };
+    });
+  } catch { return []; }
+}
+
 // ── Eval queries ───────────────────────────────────────
 
-export function getEvalSeries(task: string, metric: string): { step: number; value: number }[] {
+export function getEvalSeries(task: string, metric: string, runId?: number | null): { step: number; value: number }[] {
   try {
+    if (runId != null) {
+      return db.query<{ step: number; value: number }>(
+        "SELECT step, value FROM metrics WHERE run_id = ? AND key = ? ORDER BY step",
+        [runId, `eval/${task}/${metric}`]
+      );
+    }
     return db.query<{ step: number; value: number }>(
       "SELECT step, value FROM metrics WHERE key = ? ORDER BY step",
       [`eval/${task}/${metric}`]
@@ -224,11 +322,25 @@ export function getEvalSeries(task: string, metric: string): { step: number; val
   } catch { return []; }
 }
 
-export function getEvalTaskMetrics(): Map<string, string> {
+export function getCompositeSeries(runId?: number | null): { step: number; value: number }[] {
   try {
-    const rows = db.query<{ key: string }>(
-      "SELECT DISTINCT key FROM metrics WHERE key LIKE 'eval/%'"
+    if (runId != null) {
+      return db.query<{ step: number; value: number }>(
+        "SELECT step, value FROM metrics WHERE run_id = ? AND key = 'eval/composite' ORDER BY step",
+        [runId]
+      );
+    }
+    return db.query<{ step: number; value: number }>(
+      "SELECT step, value FROM metrics WHERE key = 'eval/composite' ORDER BY step"
     );
+  } catch { return []; }
+}
+
+export function getEvalTaskMetrics(runId?: number | null): Map<string, string> {
+  try {
+    const rows = runId != null
+      ? db.query<{ key: string }>("SELECT DISTINCT key FROM metrics WHERE run_id = ? AND key LIKE 'eval/%'", [runId])
+      : db.query<{ key: string }>("SELECT DISTINCT key FROM metrics WHERE key LIKE 'eval/%'");
     const map = new Map<string, string>();
     for (const row of rows) {
       const parts = row.key.split("/");

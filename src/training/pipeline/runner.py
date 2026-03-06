@@ -101,7 +101,8 @@ class PipelineRunner:
             if sched_steps == 0 and stage.max_flops is not None:
                 # Estimate steps from FLOPs budget for scheduler curve
                 fpt = self.trainer._compute_flops_per_token()
-                tps = seq_len * batch_size
+                grad_acc = self.config.training.gradient_accumulation_steps
+                tps = seq_len * batch_size * grad_acc
                 sched_steps = int(stage.max_flops / max(fpt * tps, 1)) + 1
             scheduler = build_scheduler(
                 scheduler_config, self.trainer.optimizer, sched_steps
@@ -117,7 +118,7 @@ class PipelineRunner:
             self.trainer.should_stop = False
 
             # Patch config budget
-            self.trainer.config.training.max_steps = global_step + stage.max_steps
+            self.trainer.config.training.max_steps = global_step + sched_steps
             if stage.max_flops is not None:
                 self.trainer.config.training.max_flops = stage.max_flops
                 self.trainer._max_flops = stage.max_flops
@@ -127,7 +128,7 @@ class PipelineRunner:
                 self.trainer.config.training.max_flops = None
                 self.trainer._max_flops = None
             if not stage.eval_enabled:
-                self.trainer.config.training.eval_interval = stage.max_steps + 1
+                self.trainer.config.training.eval_interval = sched_steps + 1
             elif stage.eval_interval is not None:
                 self.trainer.config.training.eval_interval = stage.eval_interval
             if stage.log_interval is not None:
@@ -151,7 +152,7 @@ class PipelineRunner:
             for cb in stage_cbs:
                 self.trainer.callbacks.remove(cb)
 
-            global_step += stage.max_steps
+            global_step += sched_steps
 
     def _prepare_for_sft(self):
         """Add chat special tokens and resize model embeddings for SFT."""

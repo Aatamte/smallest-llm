@@ -9,16 +9,20 @@ import {
   getRuns,
   getRunModelName,
   getRunMaxSteps,
+  getRunEvalInterval,
+  getRunMaxFlops,
   getRunStartTime,
   getCheckpoints,
   getGenerations,
   getLogs,
   getEvalSeries,
+  getCompositeSeries,
   getEvalTaskMetrics,
   getEvals,
   getTextState,
   getCompareRunSeries,
   getMetricKeys,
+  getLeaderboard,
 } from "./queries";
 
 // ── Building block ──────────────────────────────
@@ -78,6 +82,14 @@ export function useRunMaxSteps(runId: number | null) {
   return useTableQuery("runs", () => getRunMaxSteps(runId));
 }
 
+export function useRunEvalInterval(runId: number | null) {
+  return useTableQuery("runs", () => getRunEvalInterval(runId));
+}
+
+export function useRunMaxFlops(runId: number | null) {
+  return useTableQuery("runs", () => getRunMaxFlops(runId));
+}
+
 export function useRunStartTime(runId: number | null) {
   return useTableQuery("runs", () => getRunStartTime(runId));
 }
@@ -96,14 +108,23 @@ export function useLogs(runId: number | null) {
 }
 
 // ── Evals (stored in metrics table) ─────────────
-export function useEvalSeries(task: string, metric: string) {
-  return useTableQuery("metrics", () => getEvalSeries(task, metric));
+export function useEvalSeries(task: string, metric: string, runId?: number | null) {
+  return useTableQuery("metrics", () => getEvalSeries(task, metric, runId));
 }
 
-export function useEvalTaskMetrics() {
-  return useTableQuery("metrics", () => getEvalTaskMetrics());
+export function useCompositeSeries(runId?: number | null) {
+  return useTableQuery("metrics", () => getCompositeSeries(runId));
+}
+
+export function useEvalTaskMetrics(runId?: number | null) {
+  return useTableQuery("metrics", () => getEvalTaskMetrics(runId));
 }
 
 export function useEvals() {
   return useTableQuery("metrics", () => getEvals());
+}
+
+// ── Leaderboard ─────────────────────────────────
+export function useLeaderboard() {
+  return useTableQuery(["metrics", "runs"], () => getLeaderboard());
 }

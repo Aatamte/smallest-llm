@@ -9,7 +9,7 @@ import { useMetricSeries, useMetricKeys } from "../db/hooks";
 
 const Plot = createPlotlyComponent(Plotly);
 
-const CHART_HEIGHT = 320;
+const CHART_HEIGHT = 400;
 const ACTIVE_COLOR = "#3b82f6";
 
 export function SelectableMetricChart() {
