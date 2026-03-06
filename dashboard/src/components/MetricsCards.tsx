@@ -1,8 +1,6 @@
-import { useCallback } from "react";
 import { useAtomValue } from "jotai";
 import { activeRunIdAtom } from "../storage";
-import { useQuery } from "../db/hooks";
-import { getLatestMetric } from "../db/queries";
+import { useLatestMetric } from "../db/hooks";
 
 interface CardProps {
   label: string;
@@ -23,11 +21,11 @@ function Card({ label, value, sub }: CardProps) {
 export function MetricsCards() {
   const runId = useAtomValue(activeRunIdAtom);
 
-  const trainLoss = useQuery(useCallback(() => getLatestMetric(runId, "trainLoss"), [runId]));
-  const valLoss = useQuery(useCallback(() => getLatestMetric(runId, "valLoss"), [runId]));
-  const bpc = useQuery(useCallback(() => getLatestMetric(runId, "bpc"), [runId]));
-  const tokSec = useQuery(useCallback(() => getLatestMetric(runId, "tokensPerSec"), [runId]));
-  const tokensSeen = useQuery(useCallback(() => getLatestMetric(runId, "tokensSeen"), [runId]));
+  const trainLoss = useLatestMetric("trainLoss", runId);
+  const valLoss = useLatestMetric("valLoss", runId);
+  const bpc = useLatestMetric("bpc", runId);
+  const tokSec = useLatestMetric("tokensPerSec", runId);
+  const tokensSeen = useLatestMetric("tokensSeen", runId);
 
   const formatTokens = (n: number) => {
     if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";

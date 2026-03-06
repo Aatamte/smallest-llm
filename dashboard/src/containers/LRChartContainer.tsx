@@ -1,13 +1,11 @@
-import { useCallback } from "react";
 import { useAtomValue } from "jotai";
 import { activeRunIdAtom } from "../storage";
 import { LRChart } from "../components/LRChart";
-import { useQuery } from "../db/hooks";
-import { getMetricSeries } from "../db/queries";
+import { useMetricSeries } from "../db/hooks";
 
 export function LRChartContainer() {
   const runId = useAtomValue(activeRunIdAtom);
-  const points = useQuery(useCallback(() => getMetricSeries("lr", runId), [runId]));
+  const points = useMetricSeries("lr", runId);
 
   return (
     <LRChart

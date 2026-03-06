@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useAtomValue, useAtom } from "jotai";
 import { activeRunIdAtom } from "../storage";
 import { subPageAtom } from "../storage/atoms/uiAtoms";
 import { navigateTo } from "../storage/atoms/uiAtoms";
-import { useQuery } from "../db/hooks";
-import { getStatus, getRuns } from "../db/queries";
+import { useStatus, useRuns } from "../db/hooks";
 import { startRun, deleteRun, bulkDeleteRuns, fetchConfig, fetchPresets, fetchPreset } from "../api/client";
 import { RunPage } from "../components/RunPage";
 
@@ -12,8 +11,8 @@ export function RunContainer() {
   const sub = useAtomValue(subPageAtom);
   const [activeRunId, setActiveRunId] = useAtom(activeRunIdAtom);
 
-  const status = useQuery(useCallback(() => getStatus(activeRunId), [activeRunId]));
-  const runs = useQuery(useCallback(() => getRuns(), []));
+  const status = useStatus(activeRunId);
+  const runs = useRuns();
 
   // New run state
   const [config, setConfig] = useState<Record<string, unknown> | null>(null);

@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-import torch
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
-
-from src.types.activation_stat import ActivationStatRecord
-from src.types.layer_stat import LayerStatRecord
 
 if TYPE_CHECKING:
     from src.training.trainer import Trainer
@@ -62,108 +58,6 @@ class EarlyStoppingCallback(CallbackBase):
             if self.wait >= self.patience:
                 print(f"Early stopping at step {step} (no improvement for {self.patience} evals)")
                 trainer.should_stop = True
-
-
-class LayerStatsCallback(CallbackBase):
-    """Broadcast per-layer grad/weight stats to the dashboard."""
-
-    def __init__(self, log_interval: int = 50):
-        self.log_interval = log_interval
-        self._prev_weights: dict[str, float] = {}
-
-    def on_step_end(self, trainer: Trainer, step: int) -> None:
-        if step % self.log_interval != 0:
-            return
-        if not trainer.logger:
-            return
-
-        stats: list[LayerStatRecord] = []
-        for name, param in trainer.model.named_parameters():
-            if param.requires_grad and param.grad is not None:
-                grad_norm = param.grad.data.norm(2).item()
-                weight_norm = param.data.norm(2).item()
-
-                prev_norm = self._prev_weights.get(name)
-                if prev_norm is not None and weight_norm > 0:
-                    update_ratio = abs(weight_norm - prev_norm) / weight_norm
-                else:
-                    update_ratio = 0.0
-                self._prev_weights[name] = weight_norm
-
-                short = name.replace("model.", "").replace(".weight", ".W").replace(".bias", ".b")
-
-                stats.append(LayerStatRecord(
-                    name=short,
-                    grad_norm=round(grad_norm, 6),
-                    weight_norm=round(weight_norm, 4),
-                    update_ratio=round(update_ratio, 8),
-                ))
-
-        trainer.logger.broadcast_layers(stats)
-
-
-class ActivationStatsCallback(CallbackBase):
-    """Collect and broadcast per-layer activation statistics via forward hooks."""
-
-    # Block classes we want to hook — imported lazily to avoid circular imports
-    _BLOCK_TYPES: tuple[type, ...] | None = None
-
-    def __init__(self, log_interval: int = 50):
-        self.log_interval = log_interval
-        self._stats: dict[str, dict] = {}
-        self._hooks: list[torch.utils.hooks.RemovableHook] = []
-
-    @classmethod
-    def _get_block_types(cls) -> tuple[type, ...]:
-        if cls._BLOCK_TYPES is None:
-            from src.models.tiny_transformer import TransformerBlock
-            from src.models.mamba import MambaBlock
-            from src.models.mamba2 import Mamba2Block
-            from src.models.mamba3 import Mamba3Layer
-            from src.models.improved_mamba3 import ImprovedMamba3Layer
-            from src.models.plastic_mamba3 import PlasticMamba3Layer
-            from src.models.multiscale_mamba3 import MultiScaleMamba3Layer
-            from src.models.hybrid_mamba3 import LocalAttentionLayer
-            cls._BLOCK_TYPES = (TransformerBlock, MambaBlock, Mamba2Block, Mamba3Layer, ImprovedMamba3Layer, PlasticMamba3Layer, MultiScaleMamba3Layer, LocalAttentionLayer)
-        return cls._BLOCK_TYPES
-
-    def _make_hook(self, name: str):
-        def hook_fn(module, input, output):
-            t = output if isinstance(output, torch.Tensor) else output[0]
-            t = t.detach().float()
-            numel = t.numel()
-            self._stats[name] = ActivationStatRecord(
-                name=name,
-                mean=round(t.mean().item(), 6),
-                std=round(t.std().item(), 6),
-                max=round(t.max().item(), 4),
-                min=round(t.min().item(), 4),
-                pct_zero=round((t == 0).sum().item() / max(numel, 1) * 100, 2),
-            )
-        return hook_fn
-
-    def on_train_begin(self, trainer: Trainer) -> None:
-        block_types = self._get_block_types()
-        for name, module in trainer.model.named_modules():
-            if isinstance(module, block_types):
-                short = name.replace("model.", "")
-                handle = module.register_forward_hook(self._make_hook(short))
-                self._hooks.append(handle)
-
-    def on_step_end(self, trainer: Trainer, step: int) -> None:
-        if step % self.log_interval != 0:
-            return
-        if not trainer.logger or not self._stats:
-            return
-        stats = sorted(self._stats.values(), key=lambda s: s.name)
-        trainer.logger.broadcast_activations(stats)
-        self._stats.clear()
-
-    def on_train_end(self, trainer: Trainer) -> None:
-        for h in self._hooks:
-            h.remove()
-        self._hooks.clear()
-        self._stats.clear()
 
 
 class EvalCallback(CallbackBase):

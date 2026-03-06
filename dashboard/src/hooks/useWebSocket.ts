@@ -30,7 +30,7 @@ export function useWebSocket() {
         onReady: () => {
           // sync complete — tables are populated
         },
-      });
+      }, store);
     }
 
     start().catch((err) => console.error("Failed to init db/ws:", err));

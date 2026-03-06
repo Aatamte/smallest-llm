@@ -100,7 +100,6 @@ class LoggingConfig:
 
 @dataclass
 class MonitoringConfig:
-    activation_stats: bool = True
     log_interval: int = 50
 
 

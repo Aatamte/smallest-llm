@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import initSqlJs, { type Database as SqlJsDatabase } from "sql.js";
 import { Table } from "../table";
 import type { TableSchema } from "../types";
@@ -260,73 +260,6 @@ describe("clear", () => {
   });
 });
 
-// ── Versioning ──────────────────────────────────────────
-
-describe("versioning", () => {
-  it("version starts at 0", () => {
-    const t = makeTable();
-    expect(t.getVersion()).toBe(0);
-  });
-
-  it("upsert increments version", () => {
-    const t = makeTable();
-    t.upsert({ id: 1, name: "a" });
-    expect(t.getVersion()).toBe(1);
-  });
-
-  it("upsertMany increments version once", () => {
-    const t = makeTable();
-    t.upsertMany([
-      { id: 1, name: "a" },
-      { id: 2, name: "b" },
-      { id: 3, name: "c" },
-    ]);
-    expect(t.getVersion()).toBe(1);
-  });
-
-  it("delete increments version", () => {
-    const t = makeTable();
-    t.upsert({ id: 1, name: "a" });
-    t.delete(1);
-    expect(t.getVersion()).toBe(2);
-  });
-
-  it("clear increments version", () => {
-    const t = makeTable();
-    t.upsert({ id: 1, name: "a" });
-    t.clear();
-    expect(t.getVersion()).toBe(2);
-  });
-
-  it("select does NOT increment version", () => {
-    const t = makeTable();
-    t.upsert({ id: 1, name: "a" });
-    const v = t.getVersion();
-    t.select();
-    expect(t.getVersion()).toBe(v);
-  });
-
-  it("subscribe callback fires on mutation", () => {
-    const t = makeTable();
-    const cb = vi.fn();
-    t.subscribe(cb);
-    t.upsert({ id: 1, name: "a" });
-    expect(cb).toHaveBeenCalledTimes(1);
-    t.upsert({ id: 2, name: "b" });
-    expect(cb).toHaveBeenCalledTimes(2);
-  });
-
-  it("unsubscribe stops callbacks", () => {
-    const t = makeTable();
-    const cb = vi.fn();
-    const unsub = t.subscribe(cb);
-    t.upsert({ id: 1, name: "a" });
-    expect(cb).toHaveBeenCalledTimes(1);
-    unsub();
-    t.upsert({ id: 2, name: "b" });
-    expect(cb).toHaveBeenCalledTimes(1);
-  });
-});
 
 // ── Hashing ─────────────────────────────────────────────
 

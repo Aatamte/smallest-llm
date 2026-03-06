@@ -93,7 +93,6 @@ def get_training_state(run_id: int):
         max_steps=training_config.get("max_steps", 10000),
         start_time=run.get("created_at", ""),
         series=series,
-        layer_stats=[],
         generations=[],
     )
     return snapshot.to_wire()

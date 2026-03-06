@@ -1,39 +1,38 @@
-import { useCallback, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useAtomValue } from "jotai";
 import createPlotlyComponent from "react-plotly.js/factory";
 import Plotly from "plotly.js-dist-min";
 import { basePlotlyLayout, basePlotlyConfig } from "../types/chart";
 import type { Data } from "plotly.js-dist-min";
-import { useQuery } from "../db/hooks";
-import { getMetricSeries } from "../db/queries";
+import { activeRunIdAtom } from "../storage";
+import { useMetricSeries, useMetricKeys } from "../db/hooks";
 
 const Plot = createPlotlyComponent(Plotly);
 
 const CHART_HEIGHT = 320;
 const ACTIVE_COLOR = "#3b82f6";
 
-const METRIC_OPTIONS: { key: string; label: string }[] = [
-  { key: "trainLoss", label: "Train Loss" },
-  { key: "valLoss", label: "Val Loss" },
-  { key: "lr", label: "Learning Rate" },
-  { key: "gradNorm", label: "Grad Norm" },
-  { key: "tokensPerSec", label: "Tokens/s" },
-  { key: "tokensSeen", label: "Tokens Seen" },
-  { key: "bpc", label: "BPC" },
-  { key: "stepTime", label: "Step Time" },
-];
-
 export function SelectableMetricChart() {
-  const [selected, setSelected] = useState("trainLoss");
+  const runId = useAtomValue(activeRunIdAtom);
+  const keys = useMetricKeys(runId);
+  const [selected, setSelected] = useState("");
 
-  const points = useQuery(useCallback(() => getMetricSeries(selected), [selected]));
+  // Auto-select first key when keys change and current selection is invalid
+  useEffect(() => {
+    if (keys.length > 0 && (!selected || !keys.includes(selected))) {
+      setSelected(keys[0]);
+    }
+  }, [keys, selected]);
+
+  const points = useMetricSeries(selected, runId);
 
   const traces = useMemo((): Data[] => {
-    const label = METRIC_OPTIONS.find((o) => o.key === selected)?.label ?? selected;
+    if (!selected) return [];
     return [
       {
         x: points.map((p) => p.step),
         y: points.map((p) => p.value),
-        name: label,
+        name: selected,
         type: "scatter",
         mode: "lines",
         line: { color: ACTIVE_COLOR, width: 1.5 },
@@ -43,14 +42,13 @@ export function SelectableMetricChart() {
     ];
   }, [points, selected]);
 
-  const layout = useMemo(
-    () => basePlotlyLayout({ height: CHART_HEIGHT }),
-    [],
-  );
+  const layout = useMemo(() => basePlotlyLayout({ height: CHART_HEIGHT }), []);
   const config = useMemo(() => basePlotlyConfig(), []);
 
   const last = points.length > 0 ? points[points.length - 1] : null;
   const currentValue = last ? last.value.toFixed(4) : "—";
+
+  if (keys.length === 0) return null;
 
   return (
     <div className="eval-explorer-card">
@@ -60,8 +58,8 @@ export function SelectableMetricChart() {
           value={selected}
           onChange={(e) => setSelected(e.target.value)}
         >
-          {METRIC_OPTIONS.map((opt) => (
-            <option key={opt.key} value={opt.key}>{opt.label}</option>
+          {keys.map((key) => (
+            <option key={key} value={key}>{key}</option>
           ))}
         </select>
         <span className="metric-chart-value" style={{ color: ACTIVE_COLOR }}>

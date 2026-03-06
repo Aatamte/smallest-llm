@@ -27,6 +27,7 @@ export interface TrainingInfoBarProps {
   tokensPerSec: number;
   trainLoss: number;
   bpc: number;
+  textState: string;
   stopping: boolean;
   onStop: () => void;
 }
@@ -54,6 +55,7 @@ export function TrainingInfoBar({
   tokensPerSec,
   trainLoss,
   bpc,
+  textState,
   stopping,
   onStop,
 }: TrainingInfoBarProps) {
@@ -127,6 +129,11 @@ export function TrainingInfoBar({
           <span className="train-info-stat">bpc {bpc.toFixed(3)}</span>
         )}
       </div>
+
+      {/* Row 3: text state */}
+      {textState && (
+        <div className="train-info-text-state">{textState}</div>
+      )}
     </div>
   );
 }

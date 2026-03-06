@@ -1,7 +1,5 @@
-import { useCallback } from "react";
 import { EvalChartContainer } from "./EvalChartContainer";
-import { useQuery } from "../db/hooks";
-import { getEvalTaskMetrics } from "../db/queries";
+import { useEvalTaskMetrics } from "../db/hooks";
 
 const EVAL_COLORS = ["#f59e0b", "#10b981", "#ec4899", "#06b6d4", "#8b5cf6"];
 
@@ -11,7 +9,7 @@ const EVAL_COLORS = ["#f59e0b", "#10b981", "#ec4899", "#06b6d4", "#8b5cf6"];
  * Tasks and metrics are discovered dynamically from the data.
  */
 export function EvalChartsSection() {
-  const taskMetric = useQuery(useCallback(() => getEvalTaskMetrics(), []));
+  const taskMetric = useEvalTaskMetrics();
 
   const allTasks = [...taskMetric.keys()].sort();
   if (allTasks.length === 0) return null;

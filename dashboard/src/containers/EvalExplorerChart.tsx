@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import createPlotlyComponent from "react-plotly.js/factory";
 import Plotly from "plotly.js-dist-min";
 import { basePlotlyLayout, basePlotlyConfig } from "../types/chart";
 import type { Data } from "plotly.js-dist-min";
-import { useQuery } from "../db/hooks";
-import { getEvals, getEvalSeries } from "../db/queries";
+import { useEvals, useEvalSeries } from "../db/hooks";
 
 const Plot = createPlotlyComponent(Plotly);
 
@@ -12,7 +11,7 @@ const CHART_HEIGHT = 320;
 const CHART_COLOR = "#3b82f6";
 
 export function EvalExplorerChart() {
-  const allEvals = useQuery(useCallback(() => getEvals(), []));
+  const allEvals = useEvals();
 
   const options = useMemo(() => {
     const seen = new Set<string>();
@@ -31,12 +30,8 @@ export function EvalExplorerChart() {
   }, [options, selected]);
 
   const [task, metric] = selected.split("/", 2);
-  const series = useQuery(
-    useCallback(
-      () => (task && metric ? getEvalSeries(task, metric) : []),
-      [task, metric]
-    )
-  );
+  const rawSeries = useEvalSeries(task ?? "", metric ?? "");
+  const series = task && metric ? rawSeries : [];
 
   const traces = useMemo((): Data[] => [
     {

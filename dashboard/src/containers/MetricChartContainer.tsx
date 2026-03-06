@@ -1,9 +1,8 @@
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
 import { useAtomValue } from "jotai";
 import { activeRunIdAtom } from "../storage";
 import { MetricChart } from "../components/MetricChart";
-import { useQuery } from "../db/hooks";
-import { getMetricSeries } from "../db/queries";
+import { useMetricSeries } from "../db/hooks";
 import type { Data } from "plotly.js-dist-min";
 
 export interface MetricChartContainerProps {
@@ -23,7 +22,7 @@ export function MetricChartContainer({
 }: MetricChartContainerProps) {
   const runId = useAtomValue(activeRunIdAtom);
 
-  const points = useQuery(useCallback(() => getMetricSeries(metricKey, runId), [metricKey, runId]));
+  const points = useMetricSeries(metricKey, runId);
 
   const traces = useMemo((): Data[] => [
     {

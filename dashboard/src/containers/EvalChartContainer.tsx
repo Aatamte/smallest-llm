@@ -1,8 +1,7 @@
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
 import { MetricChart } from "../components/MetricChart";
 import type { Data } from "plotly.js-dist-min";
-import { useQuery } from "../db/hooks";
-import { getEvalSeries } from "../db/queries";
+import { useEvalSeries } from "../db/hooks";
 
 export interface EvalChartContainerProps {
   task: string;
@@ -21,7 +20,7 @@ export function EvalChartContainer({
   format = (v) => v.toFixed(4),
   sub,
 }: EvalChartContainerProps) {
-  const points = useQuery(useCallback(() => getEvalSeries(task, metric), [task, metric]));
+  const points = useEvalSeries(task, metric);
 
   const traces = useMemo((): Data[] => [
     {

@@ -10,6 +10,7 @@ from src.storage.table import Column, Index, Table
 
 class RunsTable(Table):
     name = "runs"
+    cdc_interval = 2.0  # text_state updates every step — throttle to 2s
     columns = [
         Column("id", "INTEGER", primary_key=True, autoincrement=True),
         Column("name", "TEXT", not_null=True),
@@ -18,6 +19,13 @@ class RunsTable(Table):
         Column("status", "TEXT", default="'running'"),
         Column("created_at", "TEXT", default="datetime('now')"),
         Column("finished_at", "TEXT"),
+        Column("live_status", "TEXT", default="'idle'"),
+        Column("text_state", "TEXT", default="''"),
+        Column("stage_index", "INTEGER", default="0"),
+        Column("stage_name", "TEXT", default="''"),
+        Column("total_stages", "INTEGER", default="0"),
+        Column("dataset", "TEXT"),
+        Column("stage_type", "TEXT", default="'pretrain'"),
     ]
     indexes = []
 
@@ -59,3 +67,24 @@ class RunsTable(Table):
                 ["failed", rid],
             )
         return stale_ids
+
+    def set_live_status(self, run_id: int, status: str):
+        self.update("live_status = ?", "id = ?", [status, run_id])
+
+    def set_text_state(self, run_id: int, text_state: str):
+        self.update("text_state = ?", "id = ?", [text_state, run_id])
+
+    def set_stage(
+        self,
+        run_id: int,
+        stage_index: int,
+        stage_name: str,
+        total_stages: int,
+        dataset: str | None = None,
+        stage_type: str = "pretrain",
+    ):
+        self.update(
+            "stage_index = ?, stage_name = ?, total_stages = ?, dataset = ?, stage_type = ?",
+            "id = ?",
+            [stage_index, stage_name, total_stages, dataset, stage_type, run_id],
+        )

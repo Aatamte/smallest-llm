@@ -1,12 +1,10 @@
-import { useCallback } from "react";
 import { useAtomValue } from "jotai";
 import { activeRunIdAtom } from "../storage";
-import { useQuery } from "../db/hooks";
-import { getGenerations } from "../db/queries";
+import { useGenerations } from "../db/hooks";
 
 export function GenerationPanel() {
   const runId = useAtomValue(activeRunIdAtom);
-  const generations = useQuery(useCallback(() => getGenerations(runId), [runId]));
+  const generations = useGenerations(runId);
 
   return (
     <div className="panel">

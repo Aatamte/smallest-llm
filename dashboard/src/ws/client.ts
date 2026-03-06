@@ -1,6 +1,8 @@
+import type { Store } from "jotai";
 import { db } from "../lib/db";
 import type { TableSchema } from "../lib/types";
 import type { ConnectionStatus } from "../storage";
+import { getTableVersionAtom } from "../db/atoms";
 
 // Use the page's host so Vite dev proxy handles it
 const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -24,11 +26,16 @@ const MAX_DELAY = 30000;
  * 4. Server sends {type: "ready"}
  * 5. Server streams {type: "op", table, op, row?, key?}
  */
-export function createWebSocket(callbacks: WSCallbacks): () => void {
+export function createWebSocket(callbacks: WSCallbacks, store: Store): () => void {
   let ws: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout>;
   let closed = false;
   let attempt = 0;
+
+  function bumpTable(table: string) {
+    const atom = getTableVersionAtom(table);
+    store.set(atom, (v) => v + 1);
+  }
 
   function connect() {
     if (closed) return;
@@ -57,6 +64,7 @@ export function createWebSocket(callbacks: WSCallbacks): () => void {
           case "dump":
             console.log(`[ws] dump: ${msg.table} (${msg.rows.length} rows)`);
             db.applyDump(msg.table, msg.rows);
+            bumpTable(msg.table);
             break;
 
           case "ready":
@@ -67,13 +75,13 @@ export function createWebSocket(callbacks: WSCallbacks): () => void {
             break;
 
           case "op":
-            console.debug(`[ws] op: ${msg.op} ${msg.table}`);
             db.applyOp(msg);
+            bumpTable(msg.table);
             break;
 
           case "ops":
-            console.debug(`[ws] ops: ${msg.op} ${msg.table} (${msg.rows.length} rows)`);
             db.applyOps(msg);
+            bumpTable(msg.table);
             break;
 
           default:

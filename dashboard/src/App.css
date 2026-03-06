@@ -367,6 +367,15 @@ body {
   transition: width 0.3s ease;
 }
 
+.train-info-text-state {
+  padding: 2px 8px 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Home Page */
 .metrics-layout {
   display: flex;
@@ -403,6 +412,43 @@ body {
   font-size: 18px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+/* Selectable metric / eval explorer chart */
+.eval-explorer-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.eval-explorer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+  gap: 8px;
+}
+
+.eval-explorer-select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  min-width: 0;
+  flex: 1;
+  max-width: 240px;
+}
+
+.eval-explorer-select:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 /* Gradients Page */

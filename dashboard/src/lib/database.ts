@@ -5,8 +5,6 @@ import type { TableSchema } from "./types";
 export class Database {
   private _db: SqlJsDatabase | null = null;
   private _tables: Map<string, Table> = new Map();
-  private _globalVersion = 0;
-  private _globalListeners: Set<() => void> = new Set();
   private _dumpedTables: Set<string> = new Set();
 
   /** Load sql.js WASM and create an in-memory database.
@@ -26,18 +24,6 @@ export class Database {
     const table = new Table(schema, db);
     table.create();
     this._tables.set(schema.name, table);
-    // Forward table mutations to global listeners
-    table.subscribe(() => {
-      this._globalVersion++;
-      for (const listener of this._globalListeners) {
-        listener();
-      }
-    });
-    // Notify that a new table was added
-    this._globalVersion++;
-    for (const listener of this._globalListeners) {
-      listener();
-    }
     return table;
   }
 
@@ -119,17 +105,6 @@ export class Database {
   /** Reset dump tracking (call after sync is complete so next reconnect re-clears). */
   resetDumpState(): void {
     this._dumpedTables.clear();
-  }
-
-  /** Subscribe to any table mutation. Returns unsubscribe function. */
-  subscribe(callback: () => void): () => void {
-    this._globalListeners.add(callback);
-    return () => { this._globalListeners.delete(callback); };
-  }
-
-  /** Global version counter — incremented on every table mutation. */
-  getVersion(): number {
-    return this._globalVersion;
   }
 
   /** Clear all data from all tables. */

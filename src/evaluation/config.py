@@ -21,9 +21,9 @@ class EvalConfig:
 # ── Standard eval suites ─────────────────────────────────────────────────────
 # Core tasks: perplexity (quality), blimp (grammar).
 
-# Standard eval: core benchmarks, generous samples. Use for real training runs.
+# Standard eval: the same benchmarks used by SmolLM / LLaMA evals.
 STANDARD_EVAL = EvalConfig(
-    tasks=["perplexity", "blimp"],
+    tasks=["hellaswag", "arc_easy", "arc_challenge", "piqa", "winogrande", "mmlu"],
     max_samples=500,
     interval=2000,
 )
@@ -35,38 +35,20 @@ QUICK_EVAL = EvalConfig(
     interval=500,
 )
 
-# Diagnostic eval: SSM probes + generation quality. Use for architecture debugging.
-DIAGNOSTIC_EVAL = EvalConfig(
-    tasks=["state_tracking", "generation_quality"],
-    max_samples=200,
-    interval=1000,
-)
-
-# SmolLM-style eval: the same benchmarks used by SmolLM / LLaMA evals.
-SMOLLM_EVAL = EvalConfig(
-    tasks=["hellaswag", "arc_easy", "arc_challenge", "piqa", "winogrande", "mmlu"],
-    max_samples=100,
-    interval=500,
-)
-
 # All task names in the standard suite, for use in TrainingConfig defaults.
-STANDARD_EVAL_TASKS = "perplexity,blimp"
+STANDARD_EVAL_TASKS = "hellaswag,arc_easy,arc_challenge,piqa,winogrande,mmlu"
 
 # ── Eval preset registry ─────────────────────────────────────────────────────
 
 EVAL_PRESETS: dict[str, EvalConfig] = {
     "standard": STANDARD_EVAL,
     "quick": QUICK_EVAL,
-    "diagnostic": DIAGNOSTIC_EVAL,
-    "smollm": SMOLLM_EVAL,
     "none": EvalConfig(tasks=[]),
 }
 
 EVAL_PRESET_LABELS: dict[str, str] = {
-    "standard": "Standard (perplexity + blimp, 500 samples)",
-    "quick": "Quick (quick_loss, 32 held-out snippets)",
-    "diagnostic": "Diagnostic (state tracking + generation quality)",
-    "smollm": "SmolLM (hellaswag, arc, piqa, winogrande, mmlu, 500 samples)",
+    "standard": "Standard (hellaswag, arc, piqa, winogrande, mmlu)",
+    "quick": "Quick (ablation suite, 32 samples)",
     "none": "None (no eval)",
 }
 

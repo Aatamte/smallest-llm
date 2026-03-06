@@ -1,15 +1,13 @@
-import { useCallback } from "react";
 import { useAtomValue } from "jotai";
 import { activeRunIdAtom } from "../storage";
 import { LossChart } from "../components/LossChart";
-import { useQuery } from "../db/hooks";
-import { getTrainLossSeries, getValLossSeries } from "../db/queries";
+import { useMetricSeries } from "../db/hooks";
 
 export function LossChartContainer() {
   const runId = useAtomValue(activeRunIdAtom);
 
-  const train = useQuery(useCallback(() => getTrainLossSeries(runId), [runId]));
-  const val = useQuery(useCallback(() => getValLossSeries(runId), [runId]));
+  const train = useMetricSeries("trainLoss", runId);
+  const val = useMetricSeries("valLoss", runId);
 
   return (
     <LossChart

@@ -1,8 +1,5 @@
-import { useSyncExternalStore } from "react";
 import type { Database as SqlJsDatabase } from "sql.js";
 import type { TableSchema } from "./types";
-
-type Listener = () => void;
 
 /** djb2 hash over a string → unsigned 32-bit integer. */
 function djb2(str: string): number {
@@ -17,9 +14,7 @@ export class Table {
   readonly schema: TableSchema;
   readonly pkCol: string;
   private _db: SqlJsDatabase;
-  private _version = 0;
   private _hash = 0;
-  private _listeners: Set<Listener> = new Set();
   private _colNames: string[];
 
   constructor(schema: TableSchema, db: SqlJsDatabase) {
@@ -84,7 +79,6 @@ export class Table {
     }
 
     const result = this._db.exec("SELECT last_insert_rowid() as id");
-    this._bump();
     return result.length > 0 ? (result[0].values[0][0] as number) : 0;
   }
 
@@ -116,7 +110,6 @@ export class Table {
       }
     }
 
-    this._bump();
   }
 
   /** Fast bulk insert — skips per-row lookups, recomputes hash once at end.
@@ -136,7 +129,6 @@ export class Table {
       this._hash ^= djb2(str);
     }
 
-    this._bump();
   }
 
   /** Select rows with optional WHERE, params, orderBy, columns. */
@@ -173,44 +165,17 @@ export class Table {
       `DELETE FROM ${this.schema.name} WHERE ${this.pkCol} = ?`,
       [key] as (string | number | null | Uint8Array)[]
     );
-    this._bump();
   }
 
   /** Delete all rows. Resets hash to 0. */
   clear(): void {
     this._db.run(`DELETE FROM ${this.schema.name}`);
     this._hash = 0;
-    this._bump();
   }
 
   /** Current content hash (XOR of all row hashes). */
   getHash(): number {
     return this._hash;
-  }
-
-  /** Current version number. Incremented on every mutation. */
-  getVersion(): number {
-    return this._version;
-  }
-
-  /** Subscribe to mutations. Returns unsubscribe function. */
-  subscribe(callback: Listener): () => void {
-    this._listeners.add(callback);
-    return () => {
-      this._listeners.delete(callback);
-    };
-  }
-
-  /**
-   * React hook: subscribe to this table and re-run queryFn on mutations.
-   * Uses useSyncExternalStore — only re-renders when this table changes.
-   */
-  useQuery<T>(queryFn: () => T): T {
-    useSyncExternalStore(
-      (cb) => this.subscribe(cb),
-      () => this._version,
-    );
-    return queryFn();
   }
 
   /** Hash a row's values using djb2. */
@@ -235,10 +200,4 @@ export class Table {
     return obj;
   }
 
-  private _bump(): void {
-    this._version++;
-    for (const listener of this._listeners) {
-      listener();
-    }
-  }
 }

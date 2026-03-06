@@ -16,7 +16,7 @@ from src.models import build_model
 from src.storage import Database
 import math
 
-from src.training.callbacks import ActivationStatsCallback, EvalCallback, LayerStatsCallback
+from src.training.callbacks import EvalCallback
 from src.training.techniques.echo_loss import EchoHeads
 from src.training.techniques.grad_sharpen import sharpen_gradients
 from src.training.techniques.hydra import HydraCallback
@@ -160,9 +160,7 @@ def _build_shared_components(
     if broadcaster:
         logger.broadcast_status("training")
 
-    callbacks = [LayerStatsCallback(log_interval=config.training.log_interval)]
-    if config.monitoring.activation_stats:
-        callbacks.append(ActivationStatsCallback(log_interval=config.monitoring.log_interval))
+    callbacks = []
 
     # Eval tasks callback
     if config.training.eval_tasks:

@@ -1,14 +1,13 @@
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
 import { useAtomValue } from "jotai";
 import { activeRunIdAtom } from "../storage";
-import { useQuery } from "../db/hooks";
-import { getLogs } from "../db/queries";
+import { useLogs } from "../db/hooks";
 import { LogPage } from "../components/LogPage";
 import type { LogEntry } from "../types/metrics";
 
 export function LogContainer() {
   const runId = useAtomValue(activeRunIdAtom);
-  const dbLogs = useQuery(useCallback(() => getLogs(runId), [runId]));
+  const dbLogs = useLogs(runId);
 
   const logs = useMemo((): LogEntry[] =>
     dbLogs.map((row) => ({

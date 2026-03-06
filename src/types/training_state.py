@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 
 from src.types.data_point import DataPoint
 from src.types.generation import GenerationRecord
-from src.types.layer_stat import LayerStatRecord
 
 
 @dataclass
@@ -18,7 +17,6 @@ class TrainingStateSnapshot:
     max_steps: int
     start_time: str
     series: dict[str, list[DataPoint]] = field(default_factory=dict)
-    layer_stats: list[LayerStatRecord] = field(default_factory=list)
     generations: list[GenerationRecord] = field(default_factory=list)
 
     def to_wire(self) -> dict:
@@ -49,7 +47,6 @@ class TrainingStateSnapshot:
             "tokensSeen": int(_last("tokensSeen")),
             "tokensPerSec": _last("tokensPerSec"),
             "bpc": _last("bpc"),
-            "layerStats": [l.to_wire() for l in self.layer_stats],
             "generations": [g.to_wire() for g in self.generations],
         }
 

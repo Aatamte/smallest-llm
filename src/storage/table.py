@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import time
 from dataclasses import dataclass, field
 
 
@@ -35,6 +36,7 @@ class Table:
     name: str = ""
     columns: list[Column] = []
     indexes: list[Index] = []
+    cdc_interval: float = 0.0  # seconds; 0 = immediate (no throttle)
 
     def __init__(self, conn: sqlite3.Connection, lock: threading.Lock):
         self._conn = conn
@@ -48,6 +50,10 @@ class Table:
                 f'Table "{self.name}" must have exactly one primary key column, got {len(pk_cols)}'
             )
         self.pk_col: str = pk_cols[0].name
+        # CDC throttle state
+        self._pending_ops: dict = {}  # pk → latest row (deduplicates)
+        self._flush_timer: threading.Timer | None = None
+        self._last_flush: float = 0.0
 
     def set_broadcaster(self, broadcaster):
         """Set a broadcaster to emit CDC ops on mutations."""
@@ -319,14 +325,60 @@ class Table:
         return dict(row) if row else None
 
     def _emit_op(self, op: str, row: dict | None = None, key=None):
-        """Emit a single CDC op to the broadcaster if set."""
-        if self._broadcaster is not None:
+        """Emit a single CDC op, respecting cdc_interval throttle."""
+        if self._broadcaster is None:
+            return
+        # Destructive ops and unthrottled tables go immediately
+        if op == "clear" or op == "delete" or self.cdc_interval <= 0:
+            self._flush_pending()
             self._broadcaster.publish_op(self.name, op, row=row, key=key)
+            return
+        # Buffer upsert by pk for dedup
+        if row is not None:
+            self._pending_ops[row[self.pk_col]] = row
+        self._schedule_flush()
 
     def _emit_ops(self, op: str, rows: list[dict]):
-        """Emit a batched CDC op to the broadcaster if set."""
-        if self._broadcaster is not None:
+        """Emit a batched CDC op, respecting cdc_interval throttle."""
+        if self._broadcaster is None:
+            return
+        if self.cdc_interval <= 0:
             self._broadcaster.publish_ops(self.name, op, rows=rows)
+            return
+        # Buffer all rows, dedup by pk
+        for row in rows:
+            self._pending_ops[row[self.pk_col]] = row
+        self._schedule_flush()
+
+    def _schedule_flush(self):
+        """Schedule a flush if not already scheduled."""
+        if self._flush_timer is not None:
+            return
+        elapsed = time.monotonic() - self._last_flush
+        delay = max(0.0, self.cdc_interval - elapsed)
+        if delay == 0:
+            self._flush_pending()
+        else:
+            self._flush_timer = threading.Timer(delay, self._flush_pending)
+            self._flush_timer.daemon = True
+            self._flush_timer.start()
+
+    def _flush_pending(self):
+        """Send all buffered ops as one batch message."""
+        if self._flush_timer is not None:
+            self._flush_timer.cancel()
+            self._flush_timer = None
+        self._last_flush = time.monotonic()
+        if not self._pending_ops:
+            return
+        rows = list(self._pending_ops.values())
+        self._pending_ops.clear()
+        if self._broadcaster is not None:
+            self._broadcaster.publish_ops(self.name, "upsert", rows=rows)
+
+    def flush(self):
+        """Force-flush any pending CDC ops. Call on shutdown."""
+        self._flush_pending()
 
     def _rehash_unlocked(self):
         """Recompute hash from all rows. Caller must hold lock."""

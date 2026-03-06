@@ -1,15 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
-import { useAtomValue, useAtom } from "jotai";
+import { useEffect, useState } from "react";
+import { useAtom } from "jotai";
 import { activeRunIdAtom } from "../storage";
 import { navigateTo } from "../storage/atoms/uiAtoms";
-import { useQuery } from "../db/hooks";
-import { getStatus } from "../db/queries";
+import { useStatus } from "../db/hooks";
 import { startRun, fetchConfig, fetchPresets, fetchPreset, fetchEvalPresets, fetchEvalPreset } from "../api/client";
 import { NewRunPage } from "../components/NewRunPage";
 
 export function NewRunContainer() {
   const [activeRunId, setActiveRunId] = useAtom(activeRunIdAtom);
-  const status = useQuery(useCallback(() => getStatus(activeRunId), [activeRunId]));
+  const status = useStatus(activeRunId);
 
   const [config, setConfig] = useState<Record<string, unknown> | null>(null);
   const [presets, setPresets] = useState<{ name: string; label: string; description?: string }[]>([]);

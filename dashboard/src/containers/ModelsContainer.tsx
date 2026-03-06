@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useAtomValue, useAtom } from "jotai";
 import {
   activeRunIdAtom,
   activeCheckpointIdAtom,
 } from "../storage";
-import { useQuery } from "../db/hooks";
-import { getCheckpoints } from "../db/queries";
+import { useCheckpoints } from "../db/hooks";
 import {
   fetchRunDetail,
   fetchWeights,
@@ -21,7 +20,7 @@ export function ModelsContainer() {
   const [weights, setWeights] = useState<WeightLayer[]>([]);
   const [loadingWeights, setLoadingWeights] = useState(false);
 
-  const checkpoints = useQuery(useCallback(() => getCheckpoints(runId), [runId]));
+  const checkpoints = useCheckpoints(runId);
   const [activeCheckpointId, setActiveCheckpointId] = useAtom(activeCheckpointIdAtom);
 
   const selectedStep =

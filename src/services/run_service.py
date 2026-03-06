@@ -162,12 +162,12 @@ class RunManager:
                         print("Warning: model export failed, training data is preserved")
 
                     self.db.finish_run(run_id, status="completed")
-                    self.db.run_state.set_status(run_id, "complete")
+                    self.db.set_live_status(run_id, "complete")
             except Exception:
                 traceback.print_exc()
                 if not self._stop_requested.is_set():
                     self.db.finish_run(run_id, status="failed")
-                self.db.run_state.set_status(run_id, "idle")
+                self.db.set_live_status(run_id, "idle")
             finally:
                 with self._lock:
                     self._active_run_id = None
@@ -215,7 +215,7 @@ class RunManager:
         # Thread exited cleanly — ensure DB status is 'stopped'
         if run_id is not None:
             self.db.finish_run(run_id, status="stopped")
-            self.db.run_state.set_status(run_id, "idle")
+            self.db.set_live_status(run_id, "idle")
 
         return True
 

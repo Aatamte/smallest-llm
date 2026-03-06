@@ -5,6 +5,7 @@ import { Layout } from "./components/Layout";
 import { TrainingInfoBarContainer } from "./containers/TrainingInfoBarContainer";
 import { LossChartContainer } from "./containers/LossChartContainer";
 import { MetricChartContainer } from "./containers/MetricChartContainer";
+import { SelectableMetricChart } from "./containers/SelectableMetricChart";
 import { RunContainer } from "./containers/RunContainer";
 import { LogContainer } from "./containers/LogContainer";
 import { ModelsContainer } from "./containers/ModelsContainer";
@@ -46,6 +47,7 @@ export default function App() {
           <MetricChartContainer metricKey="tokensPerSec" label="Tokens/s" color={CHART_COLORS.updateRatio} format={fmtTokens} />
           <MetricChartContainer metricKey="bpc" label="BPC" color="#eab308" format={(v) => v.toFixed(3)} sub="bits/char" />
           <MetricChartContainer metricKey="stepTime" label="Step Time" color="#8b5cf6" format={(v) => v.toFixed(3)} sub="sec" />
+          <SelectableMetricChart />
         </div>
       </main>
       {trainSub === "logs" && <LogContainer />}

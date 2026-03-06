@@ -5,9 +5,6 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING
 
-from src.types.activation_stat import ActivationStatRecord
-from src.types.layer_stat import LayerStatRecord
-
 if TYPE_CHECKING:
     from src.config.base import LoggingConfig
     from src.storage.impl.main import MainDatabase
@@ -41,24 +38,6 @@ class Logger:
         if step % self.config.console_interval == 0:
             self._print_metrics(metrics, step)
 
-    def broadcast_layers(self, layer_stats: list[LayerStatRecord]):
-        """Write per-layer gradient/weight stats to DB."""
-        if self._db is not None and self._run_id is not None:
-            stats = [
-                {"name": s.name, "grad_norm": s.grad_norm, "weight_norm": s.weight_norm, "update_ratio": s.update_ratio}
-                for s in layer_stats
-            ]
-            self._db.layer_stats.log(self._run_id, self._step_count, stats)
-
-    def broadcast_activations(self, stats: list[ActivationStatRecord]):
-        """Write per-layer activation stats to DB."""
-        if self._db is not None and self._run_id is not None:
-            records = [
-                {"name": s.name, "mean": s.mean, "std": s.std, "min": s.min, "max": s.max, "pct_zero": s.pct_zero}
-                for s in stats
-            ]
-            self._db.activation_stats.log(self._run_id, self._step_count, records)
-
     def broadcast_eval(self, step: int, results: dict):
         """Eval results are logged via eval_db, not the main DB. No-op here."""
         pass
@@ -76,9 +55,9 @@ class Logger:
         dataset: str | None = None,
         stage_type: str = "pretrain",
     ):
-        """Write stage info to run_state table."""
+        """Write stage info to runs table."""
         if self._db is not None and self._run_id is not None:
-            self._db.run_state.set_stage(
+            self._db.set_stage(
                 self._run_id,
                 stage_index=stage_index,
                 stage_name=stage_name,
@@ -95,14 +74,14 @@ class Logger:
         self.log(f"=== Stage {stage_index + 1}/{total_stages}: {stage_name} ===")
 
     def broadcast_text_state(self, text: str):
-        """Write text state to run_state table."""
+        """Write text state to runs table."""
         if self._db is not None and self._run_id is not None:
-            self._db.run_state.set_text_state(self._run_id, text)
+            self._db.set_text_state(self._run_id, text)
 
     def broadcast_status(self, status: WireStatus):
-        """Write training status to run_state table."""
+        """Write training status to runs table."""
         if self._db is not None and self._run_id is not None:
-            self._db.run_state.set_status(self._run_id, status)
+            self._db.set_live_status(self._run_id, status)
 
     def log(self, message: str, level: str = "info"):
         """Write log line to DB and print to console."""

@@ -1,25 +1,26 @@
-import { useCallback, useEffect, useState } from "react";
-import { useAtomValue, useAtom } from "jotai";
+import { useEffect, useState } from "react";
+import { useAtom } from "jotai";
 import { activeRunIdAtom } from "../storage";
-import { useQuery } from "../db/hooks";
-import { getRuns, getRunState, getRunModelName, getCurrentStep, getLatestMetric } from "../db/queries";
+import { useRuns, useRunState, useRunModelName, useRunMaxSteps, useRunStartTime, useCurrentStep, useLatestMetric } from "../db/hooks";
 import { stopRun } from "../api/client";
 import { TrainingInfoBar } from "../components/TrainingInfoBar";
 
 export function TrainingInfoBarContainer() {
   const [activeRunId, setActiveRunId] = useAtom(activeRunIdAtom);
   const [stopping, setStopping] = useState(false);
-  const runs = useQuery(useCallback(() => getRuns(), []));
+  const runs = useRuns();
 
-  const rs = useQuery(useCallback(() => getRunState(activeRunId), [activeRunId]));
-  const modelName = useQuery(useCallback(() => getRunModelName(activeRunId), [activeRunId]));
-  const step = useQuery(useCallback(() => getCurrentStep(activeRunId), [activeRunId]));
-  const tokensPerSec = useQuery(useCallback(() => getLatestMetric(activeRunId, "tokensPerSec"), [activeRunId]));
-  const trainLoss = useQuery(useCallback(() => getLatestMetric(activeRunId, "trainLoss"), [activeRunId]));
-  const bpc = useQuery(useCallback(() => getLatestMetric(activeRunId, "bpc"), [activeRunId]));
+  const rs = useRunState(activeRunId);
+  const modelName = useRunModelName(activeRunId);
+  const maxSteps = useRunMaxSteps(activeRunId);
+  const startTimeStr = useRunStartTime(activeRunId);
+  const step = useCurrentStep(activeRunId);
+  const tokensPerSec = useLatestMetric("tokensPerSec", activeRunId);
+  const trainLoss = useLatestMetric("trainLoss", activeRunId);
+  const bpc = useLatestMetric("bpc", activeRunId);
 
   const status = rs?.status ?? "idle";
-  const startTime = rs?.start_time ? new Date(rs.start_time).getTime() : Date.now();
+  const startTime = startTimeStr ? new Date(startTimeStr).getTime() : Date.now();
   const [elapsed, setElapsed] = useState(() => Math.floor((Date.now() - startTime) / 1000));
 
   useEffect(() => {
@@ -60,12 +61,13 @@ export function TrainingInfoBarContainer() {
       totalStages={rs?.total_stages ?? 0}
       dataset={rs?.dataset ?? ""}
       step={step}
-      maxSteps={rs?.max_steps ?? 0}
+      maxSteps={maxSteps}
       elapsedMin={isNaN(elapsed) ? 0 : Math.floor(elapsed / 60)}
       elapsedSec={isNaN(elapsed) ? 0 : elapsed % 60}
       tokensPerSec={tokensPerSec}
       trainLoss={trainLoss}
       bpc={bpc}
+      textState={rs?.text_state ?? ""}
       stopping={stopping}
       onStop={handleStop}
     />

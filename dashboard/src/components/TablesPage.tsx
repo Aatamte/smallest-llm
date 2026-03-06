@@ -1,13 +1,15 @@
 import { useMemo, useState } from "react";
 import { db } from "../lib/db";
-import { useQuery } from "../db/hooks";
+import { useTableQuery } from "../db/hooks";
+
+const ALL_TABLES = ["runs", "metrics", "checkpoints", "models", "generations", "logs"];
 
 export function TablesPage() {
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
 
-  const tableNames = useQuery(() => [...db.tables.keys()].sort());
+  const tableNames = useTableQuery(ALL_TABLES, () => [...db.tables.keys()].sort());
 
-  const tableInfo = useQuery(() => {
+  const tableInfo = useTableQuery(ALL_TABLES, () => {
     const info: { name: string; rowCount: number; hash: number; columns: string[] }[] = [];
     for (const [name, table] of db.tables) {
       const rows = table.select();
@@ -21,11 +23,14 @@ export function TablesPage() {
     return info;
   });
 
-  const selectedRows = useQuery(() => {
-    if (!selectedTable || !db.tables.has(selectedTable)) return [];
-    const table = db.getTable(selectedTable);
-    return table.select({ orderBy: table.pkCol + " DESC" });
-  });
+  const selectedRows = useTableQuery(
+    ALL_TABLES,
+    () => {
+      if (!selectedTable || !db.tables.has(selectedTable)) return [];
+      const table = db.getTable(selectedTable);
+      return table.select({ orderBy: table.pkCol + " DESC" });
+    }
+  );
 
   const selectedSchema = useMemo(() => {
     if (!selectedTable) return null;

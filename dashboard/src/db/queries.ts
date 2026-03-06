@@ -12,58 +12,28 @@ const METRIC_KEY_MAP: Record<string, string> = {
   stepTime: "train/step_time",
 };
 
-// ── Run state queries ──────────────────────────────────
+// ── Run state queries (merged into runs table) ───────
 
 export function getStatus(runId: number | null): string {
   if (runId == null) return "idle";
   try {
-    const rows = db.query<{ status: string }>(
-      "SELECT status FROM run_state WHERE run_id = ?", [runId]
+    const rows = db.query<{ live_status: string }>(
+      "SELECT live_status FROM runs WHERE id = ?", [runId]
     );
-    return rows[0]?.status ?? "idle";
+    return rows[0]?.live_status ?? "idle";
   } catch { return "idle"; }
-}
-
-export function getMaxSteps(runId: number | null): number {
-  if (runId == null) return 0;
-  try {
-    const rows = db.query<{ max_steps: number }>(
-      "SELECT max_steps FROM run_state WHERE run_id = ?", [runId]
-    );
-    return rows[0]?.max_steps ?? 0;
-  } catch { return 0; }
-}
-
-export function getStartTime(runId: number | null): string {
-  if (runId == null) return "";
-  try {
-    const rows = db.query<{ start_time: string }>(
-      "SELECT start_time FROM run_state WHERE run_id = ?", [runId]
-    );
-    return rows[0]?.start_time ?? "";
-  } catch { return ""; }
-}
-
-export function getTokensPerStep(runId: number | null): number {
-  if (runId == null) return 0;
-  try {
-    const rows = db.query<{ tokens_per_step: number }>(
-      "SELECT tokens_per_step FROM run_state WHERE run_id = ?", [runId]
-    );
-    return rows[0]?.tokens_per_step ?? 0;
-  } catch { return 0; }
 }
 
 export function getTextState(runId?: number | null): string {
   try {
     if (runId != null) {
       const rows = db.query<{ text_state: string }>(
-        "SELECT text_state FROM run_state WHERE run_id = ?", [runId]
+        "SELECT text_state FROM runs WHERE id = ?", [runId]
       );
       return rows[0]?.text_state ?? "";
     }
     const rows = db.query<{ text_state: string }>(
-      "SELECT text_state FROM run_state ORDER BY run_id DESC LIMIT 1"
+      "SELECT text_state FROM runs ORDER BY id DESC LIMIT 1"
     );
     return rows[0]?.text_state ?? "";
   } catch { return ""; }
@@ -77,16 +47,13 @@ export interface RunState {
   total_stages: number;
   dataset: string;
   stage_type: string;
-  max_steps: number;
-  start_time: string;
-  tokens_per_step: number;
 }
 
 export function getRunState(runId: number | null): RunState | null {
   if (runId == null) return null;
   try {
     const rows = db.query<RunState>(
-      "SELECT status, text_state, stage_index, stage_name, total_stages, dataset, stage_type, max_steps, start_time, tokens_per_step FROM run_state WHERE run_id = ?",
+      "SELECT live_status as status, text_state, stage_index, stage_name, total_stages, dataset, stage_type FROM runs WHERE id = ?",
       [runId]
     );
     return rows[0] ?? null;
@@ -102,6 +69,28 @@ export function getRunModelName(runId: number | null): string {
     if (!rows[0]?.config) return "";
     const cfg = JSON.parse(rows[0].config);
     return cfg?.model?.name ?? "";
+  } catch { return ""; }
+}
+
+export function getRunMaxSteps(runId: number | null): number {
+  if (runId == null) return 0;
+  try {
+    const rows = db.query<{ config: string }>(
+      "SELECT config FROM runs WHERE id = ?", [runId]
+    );
+    if (!rows[0]?.config) return 0;
+    const cfg = JSON.parse(rows[0].config);
+    return cfg?.training?.max_steps ?? 0;
+  } catch { return 0; }
+}
+
+export function getRunStartTime(runId: number | null): string {
+  if (runId == null) return "";
+  try {
+    const rows = db.query<{ created_at: string }>(
+      "SELECT created_at FROM runs WHERE id = ?", [runId]
+    );
+    return rows[0]?.created_at ?? "";
   } catch { return ""; }
 }
 
@@ -150,6 +139,22 @@ export function getMetricSeries(key: string, runId?: number | null): { step: num
   } catch { return []; }
 }
 
+export function getMetricKeys(runId?: number | null): string[] {
+  try {
+    if (runId != null) {
+      const rows = db.query<{ key: string }>(
+        "SELECT DISTINCT key FROM metrics WHERE run_id = ? ORDER BY key",
+        [runId]
+      );
+      return rows.map((r) => r.key);
+    }
+    const rows = db.query<{ key: string }>(
+      "SELECT DISTINCT key FROM metrics ORDER BY key"
+    );
+    return rows.map((r) => r.key);
+  } catch { return []; }
+}
+
 export function getTrainLossSeries(runId: number | null): { step: number; value: number }[] {
   if (runId == null) return [];
   return getMetricSeries("trainLoss", runId);
@@ -181,46 +186,6 @@ export function getCheckpoints(runId: number | null): { id: number; run_id: numb
       "SELECT id, run_id, step, path, is_best FROM checkpoints WHERE run_id = ? ORDER BY step",
       [runId]
     );
-  } catch { return []; }
-}
-
-// ── Layer stats & activation stats ─────────────────────
-
-export function getLayerStats(runId: number | null): { name: string; gradNorm: number; weightNorm: number; updateRatio: number }[] {
-  if (runId == null) return [];
-  try {
-    const rows = db.query<{ layer: string; grad_norm: number; weight_norm: number; update_ratio: number }>(
-      `SELECT layer, grad_norm, weight_norm, update_ratio FROM layer_stats
-       WHERE run_id = ? AND step = (SELECT MAX(step) FROM layer_stats WHERE run_id = ?)
-       ORDER BY layer`,
-      [runId, runId]
-    );
-    return rows.map((r) => ({
-      name: r.layer,
-      gradNorm: r.grad_norm ?? 0,
-      weightNorm: r.weight_norm ?? 0,
-      updateRatio: r.update_ratio ?? 0,
-    }));
-  } catch { return []; }
-}
-
-export function getActivationStats(runId: number | null): { name: string; mean: number; std: number; max: number; min: number; pctZero: number }[] {
-  if (runId == null) return [];
-  try {
-    const rows = db.query<{ layer: string; mean: number; std: number; max_val: number; min_val: number; pct_zero: number }>(
-      `SELECT layer, mean, std, max_val, min_val, pct_zero FROM activation_stats
-       WHERE run_id = ? AND step = (SELECT MAX(step) FROM activation_stats WHERE run_id = ?)
-       ORDER BY layer`,
-      [runId, runId]
-    );
-    return rows.map((r) => ({
-      name: r.layer,
-      mean: r.mean ?? 0,
-      std: r.std ?? 0,
-      max: r.max_val ?? 0,
-      min: r.min_val ?? 0,
-      pctZero: r.pct_zero ?? 0,
-    }));
   } catch { return []; }
 }
 
