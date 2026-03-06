@@ -322,10 +322,23 @@ class TestStopRun:
 
 
 class TestWebSocket:
+    @staticmethod
+    def _complete_handshake(ws):
+        """Complete the sync protocol: receive schema, send hashes, drain dumps, receive ready."""
+        schema_msg = ws.receive_json()
+        assert schema_msg["type"] == "schema"
+        ws.send_json({"hashes": {}})
+        # Drain dump and ready messages
+        while True:
+            msg = ws.receive_json()
+            if msg["type"] == "ready":
+                break
+
     def test_receives_broadcast_message(self, client):
         from src.server.broadcast import broadcaster
 
         with client.websocket_connect("/ws") as ws:
+            self._complete_handshake(ws)
             broadcaster.publish({"type": "step", "data": {"step": 1, "trainLoss": 3.5}})
             msg = ws.receive_json()
             assert msg["type"] == "step"
@@ -336,6 +349,7 @@ class TestWebSocket:
         from src.server.broadcast import broadcaster
 
         with client.websocket_connect("/ws") as ws:
+            self._complete_handshake(ws)
             broadcaster.publish({"type": "step", "data": {"step": 1}})
             broadcaster.publish({"type": "layers", "data": [{"name": "embed", "gradNorm": 0.1}]})
             broadcaster.publish({"type": "status", "data": "complete"})

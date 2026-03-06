@@ -1,5 +1,8 @@
+import { useCallback } from "react";
 import { useAtomValue } from "jotai";
-import { activationStatsAtom } from "../storage";
+import { activeRunIdAtom } from "../storage";
+import { useQuery } from "../db/hooks";
+import { getActivationStats } from "../db/queries";
 
 function deadColor(pct: number): string {
   if (pct < 5) return "#22c55e";
@@ -8,13 +11,14 @@ function deadColor(pct: number): string {
 }
 
 function stdColor(std: number): string {
-  if (std < 0.01) return "#eab308";   // saturation — very low variance
-  if (std > 10) return "#ef4444";      // explosion
+  if (std < 0.01) return "#eab308";
+  if (std > 10) return "#ef4444";
   return "var(--text)";
 }
 
 export function ActivationStats() {
-  const stats = useAtomValue(activationStatsAtom);
+  const runId = useAtomValue(activeRunIdAtom);
+  const stats = useQuery(useCallback(() => getActivationStats(runId), [runId]));
 
   if (stats.length === 0) {
     return (

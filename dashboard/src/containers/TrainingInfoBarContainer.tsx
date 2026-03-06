@@ -1,50 +1,25 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAtomValue, useAtom } from "jotai";
-import {
-  statusAtom,
-  textStateAtom,
-  maxStepsAtom,
-  startTimeAtom,
-  activeRunIdAtom,
-  availableCheckpointsAtom,
-  activeCheckpointIdAtom,
-} from "../storage";
-import { fetchCheckpoints, stopRun } from "../api/client";
-import { TrainingInfoBar } from "../components/TrainingInfoBar";
+import { activeRunIdAtom } from "../storage";
 import { useQuery } from "../db/hooks";
-import { getCurrentStep } from "../db/queries";
+import { getRuns, getRunState, getRunModelName, getCurrentStep, getLatestMetric } from "../db/queries";
+import { stopRun } from "../api/client";
+import { TrainingInfoBar } from "../components/TrainingInfoBar";
 
 export function TrainingInfoBarContainer() {
-  const status = useAtomValue(statusAtom);
-  const textState = useAtomValue(textStateAtom);
-  const step = useQuery(useCallback(() => getCurrentStep(), []));
-  const maxSteps = useAtomValue(maxStepsAtom);
-  const startTime = useAtomValue(startTimeAtom);
-  const activeRunId = useAtomValue(activeRunIdAtom);
-  const [checkpoints, setCheckpoints] = useAtom(availableCheckpointsAtom);
-  const [activeCheckpointId, setActiveCheckpointId] = useAtom(activeCheckpointIdAtom);
+  const [activeRunId, setActiveRunId] = useAtom(activeRunIdAtom);
   const [stopping, setStopping] = useState(false);
+  const runs = useQuery(useCallback(() => getRuns(), []));
 
-  useEffect(() => {
-    if (activeRunId != null) {
-      fetchCheckpoints(activeRunId)
-        .then((cps) =>
-          setCheckpoints(
-            cps.map((c) => ({
-              id: c.id,
-              run_id: c.run_id,
-              step: c.step,
-              path: c.path,
-              is_best: c.is_best,
-            })),
-          ),
-        )
-        .catch(() => setCheckpoints([]));
-    } else {
-      setCheckpoints([]);
-    }
-  }, [activeRunId, setCheckpoints]);
+  const rs = useQuery(useCallback(() => getRunState(activeRunId), [activeRunId]));
+  const modelName = useQuery(useCallback(() => getRunModelName(activeRunId), [activeRunId]));
+  const step = useQuery(useCallback(() => getCurrentStep(activeRunId), [activeRunId]));
+  const tokensPerSec = useQuery(useCallback(() => getLatestMetric(activeRunId, "tokensPerSec"), [activeRunId]));
+  const trainLoss = useQuery(useCallback(() => getLatestMetric(activeRunId, "trainLoss"), [activeRunId]));
+  const bpc = useQuery(useCallback(() => getLatestMetric(activeRunId, "bpc"), [activeRunId]));
 
+  const status = rs?.status ?? "idle";
+  const startTime = rs?.start_time ? new Date(rs.start_time).getTime() : Date.now();
   const [elapsed, setElapsed] = useState(() => Math.floor((Date.now() - startTime) / 1000));
 
   useEffect(() => {
@@ -56,34 +31,41 @@ export function TrainingInfoBarContainer() {
     return () => clearInterval(id);
   }, [startTime, status]);
 
-  function handleCheckpointChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const val = e.target.value;
-    setActiveCheckpointId(val === "" ? null : Number(val));
-  }
-
   async function handleStop() {
     if (activeRunId == null) return;
     setStopping(true);
     try {
       await stopRun(activeRunId);
     } catch {
-      // ignored — WS status update will reflect actual state
+      // ignored
     } finally {
       setStopping(false);
     }
   }
 
+  function handleRunChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const val = e.target.value;
+    setActiveRunId(val === "" ? null : Number(val));
+  }
+
   return (
     <TrainingInfoBar
+      runs={runs}
+      activeRunId={activeRunId}
+      onRunChange={handleRunChange}
       status={status}
-      textState={textState}
+      modelName={modelName}
+      stageIndex={rs?.stage_index ?? 0}
+      stageName={rs?.stage_name ?? ""}
+      totalStages={rs?.total_stages ?? 0}
+      dataset={rs?.dataset ?? ""}
       step={step}
-      maxSteps={maxSteps}
+      maxSteps={rs?.max_steps ?? 0}
       elapsedMin={isNaN(elapsed) ? 0 : Math.floor(elapsed / 60)}
       elapsedSec={isNaN(elapsed) ? 0 : elapsed % 60}
-      checkpoints={checkpoints}
-      activeCheckpointId={activeCheckpointId}
-      onCheckpointChange={handleCheckpointChange}
+      tokensPerSec={tokensPerSec}
+      trainLoss={trainLoss}
+      bpc={bpc}
       stopping={stopping}
       onStop={handleStop}
     />

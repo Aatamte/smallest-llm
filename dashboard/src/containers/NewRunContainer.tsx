@@ -1,15 +1,15 @@
-import { useEffect, useState } from "react";
-import { useAtomValue, useAtom, useSetAtom } from "jotai";
-import { statusAtom, activeRunIdAtom, resetAtom } from "../storage";
+import { useCallback, useEffect, useState } from "react";
+import { useAtomValue, useAtom } from "jotai";
+import { activeRunIdAtom } from "../storage";
 import { navigateTo } from "../storage/atoms/uiAtoms";
+import { useQuery } from "../db/hooks";
+import { getStatus } from "../db/queries";
 import { startRun, fetchConfig, fetchPresets, fetchPreset, fetchEvalPresets, fetchEvalPreset } from "../api/client";
 import { NewRunPage } from "../components/NewRunPage";
 
 export function NewRunContainer() {
-  const status = useAtomValue(statusAtom);
-  const [, setActiveRunId] = useAtom(activeRunIdAtom);
-  const setStatus = useSetAtom(statusAtom);
-  const reset = useSetAtom(resetAtom);
+  const [activeRunId, setActiveRunId] = useAtom(activeRunIdAtom);
+  const status = useQuery(useCallback(() => getStatus(activeRunId), [activeRunId]));
 
   const [config, setConfig] = useState<Record<string, unknown> | null>(null);
   const [presets, setPresets] = useState<{ name: string; label: string; description?: string }[]>([]);
@@ -32,7 +32,6 @@ export function NewRunContainer() {
 
   function handleEvalPresetChange(name: string) {
     setActiveEvalPreset(name);
-    // Apply eval preset fields into the training section of the config
     fetchEvalPreset(name).then((evalFields) => {
       setConfig((prev) => {
         if (!prev) return prev;
@@ -68,11 +67,9 @@ export function NewRunContainer() {
     setStarting(true);
     setError(null);
     try {
-      reset();
       const result = await startRun(config ?? undefined);
       setActiveRunId(result.run_id);
-      setStatus("training");
-      navigateTo("metrics");
+      navigateTo("train", "metrics");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start run");
     } finally {

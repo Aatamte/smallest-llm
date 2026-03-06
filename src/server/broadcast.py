@@ -49,12 +49,25 @@ class Broadcaster:
         row: dict | None = None,
         key: Any = None,
     ):
-        """Publish a CDC operation to all subscribers. Thread-safe."""
+        """Publish a single CDC operation to all subscribers. Thread-safe."""
         msg: dict[str, Any] = {"type": "op", "table": table, "op": op}
         if row is not None:
             msg["row"] = row
         if key is not None:
             msg["key"] = key
+        data = json.dumps(_sanitize(msg))
+        self._send(data)
+
+    def publish_ops(
+        self,
+        table: str,
+        op: str,
+        rows: list[dict],
+    ):
+        """Publish a batch of CDC operations as one message. Thread-safe."""
+        if not rows:
+            return
+        msg: dict[str, Any] = {"type": "ops", "table": table, "op": op, "rows": rows}
         data = json.dumps(_sanitize(msg))
         self._send(data)
 

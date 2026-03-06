@@ -216,18 +216,10 @@ def test_enabled_config_registers_callback():
 
 
 def test_end_to_end_with_real_trainer():
-    """Full integration: build_trainer + train + verify activations broadcast."""
-
-    class _CaptureBroadcaster:
-        def __init__(self):
-            self.messages = []
-
-        def publish(self, msg):
-            self.messages.append(msg)
-
-    broadcaster = _CaptureBroadcaster()
-
+    """Full integration: build_trainer + train + verify activation stats in DB."""
     from src.config.base import ExperimentConfig
+    from src.training.run import build_trainer
+
     config = ExperimentConfig()
     config.training.max_steps = 3
     config.training.log_interval = 1
@@ -236,17 +228,15 @@ def test_end_to_end_with_real_trainer():
     config.monitoring.activation_stats = True
     config.monitoring.log_interval = 1
 
-    from src.training.run import build_trainer
-    trainer, _ = build_trainer(config, broadcaster=broadcaster)
+    trainer, run_id = build_trainer(config)
     trainer.train()
 
-    activation_msgs = [m for m in broadcaster.messages if m.get("type") == "activations"]
-    assert len(activation_msgs) > 0, (
-        f"No activation messages. Types: {[m.get('type') for m in broadcaster.messages]}"
-    )
+    db = trainer.logger._db
+    rows = db.activation_stats.get(run_id)
+    assert len(rows) > 0, "No activation stats written to DB"
 
-    stats = activation_msgs[0]["data"]
-    assert len(stats) > 0
-    assert "name" in stats[0]
-    assert "mean" in stats[0]
-    assert "pctZero" in stats[0]
+    row = rows[0]
+    assert "layer" in row
+    assert "mean" in row
+    assert "std" in row
+    assert "pct_zero" in row

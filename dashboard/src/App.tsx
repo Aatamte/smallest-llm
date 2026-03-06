@@ -1,11 +1,10 @@
 import { useAtomValue } from "jotai";
 import { activePageAtom } from "./storage";
+import { subPageAtom } from "./storage/atoms/uiAtoms";
 import { Layout } from "./components/Layout";
+import { TrainingInfoBarContainer } from "./containers/TrainingInfoBarContainer";
 import { LossChartContainer } from "./containers/LossChartContainer";
 import { MetricChartContainer } from "./containers/MetricChartContainer";
-import { GradientChartContainer } from "./containers/GradientChartContainer";
-import { LayerStats } from "./components/LayerStats";
-import { ActivationStats } from "./components/ActivationStats";
 import { RunContainer } from "./containers/RunContainer";
 import { LogContainer } from "./containers/LogContainer";
 import { ModelsContainer } from "./containers/ModelsContainer";
@@ -27,13 +26,19 @@ const fmtTokens = (n: number) => {
 
 export default function App() {
   const page = useAtomValue(activePageAtom);
+  const sub = useAtomValue(subPageAtom);
   useWebSocket();
   useHashRouter();
 
+  const isTrain = page === "train";
+  const trainSub = isTrain ? (sub ?? "metrics") : null;
+
   return (
     <Layout>
-      {/* Chart pages stay mounted — hidden via CSS to preserve uPlot instances */}
-      <main className="metrics-layout" style={page === "metrics" ? undefined : hidden}>
+      {/* Training pages: #/train/metrics, #/train/logs */}
+      {isTrain && <TrainingInfoBarContainer />}
+
+      <main className="metrics-layout" style={trainSub === "metrics" ? undefined : hidden}>
         <LossChartContainer />
         <div className="metric-charts-grid">
           <MetricChartContainer metricKey="lr" label="Learning Rate" color={CHART_COLORS.lr} format={(v) => v.toExponential(2)} />
@@ -43,18 +48,14 @@ export default function App() {
           <MetricChartContainer metricKey="stepTime" label="Step Time" color="#8b5cf6" format={(v) => v.toFixed(3)} sub="sec" />
         </div>
       </main>
-      <main className="gradients-layout" style={page === "gradients" ? undefined : hidden}>
-        <GradientChartContainer />
-        <LayerStats />
-        <ActivationStats />
-      </main>
-      {/* Other pages mount/unmount normally */}
+      {trainSub === "logs" && <LogContainer />}
+
+      {/* Other pages */}
       {page === "runs" && <RunContainer />}
       {page === "models" && <ModelsContainer />}
       {page === "eval" && <EvalContainer />}
       {page === "chat" && <ChatContainer />}
       {page === "tables" && <TablesPage />}
-      {page === "logs" && <LogContainer />}
     </Layout>
   );
 }

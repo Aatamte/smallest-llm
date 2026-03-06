@@ -1,6 +1,6 @@
 import type { TrainingState } from "../types/metrics";
 
-export const API_BASE = `http://${window.location.hostname}:8000/api`;
+export const API_BASE = "/api";
 
 export async function startRun(config?: Record<string, unknown>): Promise<{ status: string; run_id: number }> {
   const res = await fetch(`${API_BASE}/runs/start`, {

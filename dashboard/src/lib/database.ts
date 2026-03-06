@@ -7,6 +7,7 @@ export class Database {
   private _tables: Map<string, Table> = new Map();
   private _globalVersion = 0;
   private _globalListeners: Set<() => void> = new Set();
+  private _dumpedTables: Set<string> = new Set();
 
   /** Load sql.js WASM and create an in-memory database.
    *  Optionally pass an existing sql.js Database instance (for testing). */
@@ -32,6 +33,11 @@ export class Database {
         listener();
       }
     });
+    // Notify that a new table was added
+    this._globalVersion++;
+    for (const listener of this._globalListeners) {
+      listener();
+    }
     return table;
   }
 
@@ -94,11 +100,25 @@ export class Database {
     }
   }
 
-  /** Clear a table and load it with the given rows. */
+  /** Apply a batch of CDC operations (same table, same op type) with one version bump. */
+  applyOps(msg: { table: string; op: "upsert"; rows: Record<string, unknown>[] }): void {
+    const table = this.getTable(msg.table);
+    table.bulkInsert(msg.rows);
+  }
+
+  /** Load rows into a table. First call clears the table; subsequent calls append (for chunked dumps). */
   applyDump(tableName: string, rows: Record<string, unknown>[]): void {
     const table = this.getTable(tableName);
-    table.clear();
-    table.upsertMany(rows);
+    if (!this._dumpedTables.has(tableName)) {
+      table.clear();
+      this._dumpedTables.add(tableName);
+    }
+    table.bulkInsert(rows);
+  }
+
+  /** Reset dump tracking (call after sync is complete so next reconnect re-clears). */
+  resetDumpState(): void {
+    this._dumpedTables.clear();
   }
 
   /** Subscribe to any table mutation. Returns unsubscribe function. */
@@ -110,6 +130,14 @@ export class Database {
   /** Global version counter — incremented on every table mutation. */
   getVersion(): number {
     return this._globalVersion;
+  }
+
+  /** Clear all data from all tables. */
+  clearAll(): void {
+    for (const table of this._tables.values()) {
+      table.clear();
+    }
+    this._dumpedTables.clear();
   }
 
   close(): void {

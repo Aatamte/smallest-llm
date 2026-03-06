@@ -1,57 +1,23 @@
-import { useEffect, useRef } from "react";
-import { useStore } from "jotai";
-import { stepsAtom } from "../storage";
+import { useCallback } from "react";
+import { useAtomValue } from "jotai";
+import { activeRunIdAtom } from "../storage";
 import { GradientChart } from "../components/GradientChart";
+import { useQuery } from "../db/hooks";
+import { getMetricSeries } from "../db/queries";
 
 export function GradientChartContainer() {
-  const store = useStore();
-  const xData = useRef<number[]>([0]);
-  const gradData = useRef<number[]>([0]);
-  const ratioData = useRef<number[]>([0]);
-  const lastLen = useRef(0);
+  const runId = useAtomValue(activeRunIdAtom);
 
-  const onDataRef = useRef<((x: number[], grad: number[], ratio: number[]) => void) | null>(null);
+  const gradPoints = useQuery(useCallback(() => getMetricSeries("gradNorm", runId), [runId]));
+  // update_ratio may not exist for all runs; fallback to zeros
+  const ratioPoints = useQuery(useCallback(() => getMetricSeries("train/update_ratio", runId), [runId]));
 
-  useEffect(() => {
-    const unsub = store.sub(stepsAtom, () => {
-      const steps = store.get(stepsAtom);
+  // Align on grad steps (ratio may be sparse or empty)
+  const x = gradPoints.map((p) => p.step);
+  const grad = gradPoints.map((p) => p.value);
 
-      if (steps.length === 0) {
-        xData.current = [0];
-        gradData.current = [0];
-        ratioData.current = [0];
-        lastLen.current = 0;
-        onDataRef.current?.(xData.current.slice(), gradData.current.slice(), ratioData.current.slice());
-        return;
-      }
+  const ratioMap = new Map(ratioPoints.map((p) => [p.step, p.value]));
+  const ratio = x.map((s) => ratioMap.get(s) ?? 0);
 
-      if (steps.length <= lastLen.current) {
-        lastLen.current = steps.length;
-        return;
-      }
-
-      const news = steps.slice(lastLen.current);
-      lastLen.current = steps.length;
-      for (const m of news) {
-        xData.current.push(m.step);
-        gradData.current.push(m.gradNorm);
-        ratioData.current.push(m.updateParamRatio ?? 0);
-      }
-      onDataRef.current?.(
-        xData.current.slice(),
-        gradData.current.slice(),
-        ratioData.current.slice(),
-      );
-    });
-    return unsub;
-  }, [store]);
-
-  return (
-    <GradientChart
-      initialX={xData.current}
-      initialGrad={gradData.current}
-      initialRatio={ratioData.current}
-      onDataRef={onDataRef}
-    />
-  );
+  return <GradientChart x={x} grad={grad} ratio={ratio} />;
 }

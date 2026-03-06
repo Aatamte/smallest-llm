@@ -138,28 +138,16 @@ def test_no_logger_does_not_crash():
 
 def test_end_to_end_with_real_trainer():
     """Verify LayerStatsCallback fires through the real Trainer training loop."""
-    from src.training.callbacks import LayerStatsCallback
-    from src.logging.logger import Logger
-
-    class _CaptureBroadcaster:
-        def __init__(self):
-            self.messages = []
-
-        def publish(self, msg):
-            self.messages.append(msg)
-
-    broadcaster = _CaptureBroadcaster()
-
-    # Minimal config
     from src.config.base import ExperimentConfig
+    from src.training.run import build_trainer
+
     config = ExperimentConfig()
     config.training.max_steps = 3
     config.training.log_interval = 1
     config.training.eval_interval = 9999  # skip evals
     config.training.save_interval = 9999
 
-    from src.training.run import build_trainer
-    trainer, run_id = build_trainer(config, broadcaster=broadcaster)
+    trainer, run_id = build_trainer(config)
 
     # Verify callback is registered
     cb_types = [type(cb).__name__ for cb in trainer.callbacks]
@@ -167,17 +155,14 @@ def test_end_to_end_with_real_trainer():
 
     trainer.train()
 
-    # Check that layers messages were broadcast
-    layer_msgs = [m for m in broadcaster.messages if m.get("type") == "layers"]
-    assert len(layer_msgs) > 0, (
-        f"No 'layers' messages broadcast. All message types: "
-        f"{[m.get('type') for m in broadcaster.messages]}"
-    )
+    # Check that layer stats were written to DB
+    db = trainer.logger._db
+    rows = db.layer_stats.get(run_id)
+    assert len(rows) > 0, "No layer stats written to DB"
 
     # Verify structure
-    stats = layer_msgs[0]["data"]
-    assert len(stats) > 0
-    assert "name" in stats[0]
-    assert "gradNorm" in stats[0]
-    assert "weightNorm" in stats[0]
-    assert "updateRatio" in stats[0]
+    row = rows[0]
+    assert "layer" in row
+    assert "grad_norm" in row
+    assert "weight_norm" in row
+    assert "update_ratio" in row

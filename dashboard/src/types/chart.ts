@@ -1,5 +1,3 @@
-import type uPlot from "uplot";
-
 export const CHART_COLORS = {
   trainLoss: "#3b82f6",
   valLoss: "#f97316",
@@ -11,25 +9,22 @@ export const CHART_COLORS = {
   bg: "#0a0a0f",
 } as const;
 
-/** Base options shared by all charts (dark theme). */
-export function baseOpts(width: number, height: number): Partial<uPlot.Options> {
+export function basePlotlyLayout(opts: { height?: number } = {}): Record<string, unknown> {
   return {
-    width,
-    height,
-    cursor: { show: true },
-    axes: [
-      {
-        stroke: CHART_COLORS.text,
-        grid: { stroke: CHART_COLORS.grid, width: 1 },
-        ticks: { stroke: CHART_COLORS.grid, width: 1 },
-        font: "11px Inter, sans-serif",
-      },
-      {
-        stroke: CHART_COLORS.text,
-        grid: { stroke: CHART_COLORS.grid, width: 1 },
-        ticks: { stroke: CHART_COLORS.grid, width: 1 },
-        font: "11px Inter, sans-serif",
-      },
-    ],
+    height: opts.height ?? 300,
+    paper_bgcolor: CHART_COLORS.bg,
+    plot_bgcolor: CHART_COLORS.bg,
+    font: { color: CHART_COLORS.text, family: "Inter, sans-serif", size: 11 },
+    margin: { l: 50, r: 20, t: 10, b: 40 },
+    xaxis: { gridcolor: CHART_COLORS.grid, zerolinecolor: CHART_COLORS.grid },
+    yaxis: { gridcolor: CHART_COLORS.grid, zerolinecolor: CHART_COLORS.grid },
+    showlegend: false,
+  };
+}
+
+export function basePlotlyConfig(): Record<string, unknown> {
+  return {
+    displayModeBar: false,
+    responsive: true,
   };
 }

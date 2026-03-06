@@ -1,31 +1,20 @@
 import { useAtomValue } from "jotai";
 import { activePageAtom, type PageId } from "../storage";
-import { sidebarTabAtom, navigateTo } from "../storage/atoms/uiAtoms";
+import { subPageAtom, navigateTo } from "../storage/atoms/uiAtoms";
 
-const TRAIN_ITEMS: { page: PageId; label: string; icon: React.ReactNode }[] = [
+// ── Nav items ───────────────────────────────────────────
+
+const PRIMARY_ITEMS: { page: PageId; label: string; icon: React.ReactNode }[] = [
   {
-    page: "metrics",
-    label: "Metrics",
+    page: "train",
+    label: "Train",
     icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>,
-  },
-  {
-    page: "gradients",
-    label: "Internals",
-    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>,
-  },
-  {
-    page: "logs",
-    label: "Logs",
-    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>,
   },
   {
     page: "runs",
     label: "Runs",
     icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3" /></svg>,
   },
-];
-
-const INSPECT_ITEMS: { page: PageId; label: string; icon: React.ReactNode }[] = [
   {
     page: "models",
     label: "Models",
@@ -48,26 +37,58 @@ const INSPECT_ITEMS: { page: PageId; label: string; icon: React.ReactNode }[] = 
   },
 ];
 
+const TRAIN_SUBS: { sub: string; label: string }[] = [
+  { sub: "metrics", label: "Metrics" },
+  { sub: "logs", label: "Logs" },
+];
+
 export function Sidebar() {
   const activePage = useAtomValue(activePageAtom);
-  const tab = useAtomValue(sidebarTabAtom);
+  const activeSub = useAtomValue(subPageAtom);
 
-  const items = tab === "train" ? TRAIN_ITEMS : INSPECT_ITEMS;
+  function handlePrimaryClick(page: PageId) {
+    if (page === "train") {
+      // Go to train/metrics by default
+      if (activePage !== "train") navigateTo("train", "metrics");
+    } else if (page === "runs") {
+      navigateTo("runs", "new");
+    } else {
+      navigateTo(page);
+    }
+  }
+
+  const showSecondary = activePage === "train";
 
   return (
-    <nav className="sidebar">
-      <div className="sidebar-nav">
-        {items.map((item) => (
+    <div className="sidebar-wrapper">
+      <nav className="sidebar-primary">
+        {PRIMARY_ITEMS.map((item) => (
           <button
             key={item.page}
-            className={`sidebar-item ${activePage === item.page ? "active" : ""}`}
-            onClick={() => navigateTo(item.page)}
+            className={`sidebar-icon ${activePage === item.page ? "active" : ""}`}
+            onClick={() => handlePrimaryClick(item.page)}
+            title={item.label}
           >
             {item.icon}
-            <span>{item.label}</span>
+            <span className="sidebar-icon-label">{item.label}</span>
           </button>
         ))}
-      </div>
-    </nav>
+      </nav>
+
+      {showSecondary && (
+        <nav className="sidebar-secondary">
+          <div className="sidebar-secondary-title">Training</div>
+          {TRAIN_SUBS.map((item) => (
+            <button
+              key={item.sub}
+              className={`sidebar-secondary-item ${activeSub === item.sub ? "active" : ""}`}
+              onClick={() => navigateTo("train", item.sub)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+      )}
+    </div>
   );
 }

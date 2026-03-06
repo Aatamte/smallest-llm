@@ -1,5 +1,8 @@
+import { useCallback } from "react";
 import { useAtomValue } from "jotai";
-import { layerStatsAtom } from "../storage";
+import { activeRunIdAtom } from "../storage";
+import { useQuery } from "../db/hooks";
+import { getLayerStats } from "../db/queries";
 
 function normToColor(value: number, max: number): string {
   const ratio = Math.min(value / max, 1);
@@ -10,7 +13,8 @@ function normToColor(value: number, max: number): string {
 }
 
 export function LayerStats() {
-  const layerStats = useAtomValue(layerStatsAtom);
+  const runId = useAtomValue(activeRunIdAtom);
+  const layerStats = useQuery(useCallback(() => getLayerStats(runId), [runId]));
 
   if (layerStats.length === 0) {
     return (

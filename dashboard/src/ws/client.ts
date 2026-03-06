@@ -1,68 +1,96 @@
-import type { StepMetrics, LayerStat, ActivationStat, Generation, TrainingStatus, LogLevel } from "../types/metrics";
+import { db } from "../lib/db";
+import type { TableSchema } from "../lib/types";
 import type { ConnectionStatus } from "../storage";
 
-export const WS_URL = `ws://${window.location.hostname}:8000/ws`;
+// Use the page's host so Vite dev proxy handles it
+const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+export const WS_URL = `${protocol}//${window.location.host}/ws`;
 
-export interface WSHandlers {
-  onStep: (data: StepMetrics) => void;
-  onLayers: (data: LayerStat[]) => void;
-  onActivations: (data: ActivationStat[]) => void;
-  onGeneration: (data: Generation) => void;
-  onStatus: (data: TrainingStatus) => void;
-  onLog: (data: { level: LogLevel; message: string }) => void;
+export interface WSCallbacks {
   onConnectionChange: (status: ConnectionStatus) => void;
+  onReady: () => void;
 }
 
+const BASE_DELAY = 2000;
+const MAX_DELAY = 30000;
+
 /**
- * Creates a WebSocket connection with auto-reconnect.
- * Returns a cleanup function to close the connection.
+ * CDC sync WebSocket client.
+ *
+ * Protocol:
+ * 1. Server sends {type: "schema", tables: TableSchema[]}
+ * 2. Client responds with {hashes: {tableName: hash}}
+ * 3. Server sends {type: "dump", table, rows} for mismatched tables
+ * 4. Server sends {type: "ready"}
+ * 5. Server streams {type: "op", table, op, row?, key?}
  */
-export function createWebSocket(handlers: WSHandlers): () => void {
+export function createWebSocket(callbacks: WSCallbacks): () => void {
   let ws: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout>;
   let closed = false;
+  let attempt = 0;
 
   function connect() {
     if (closed) return;
-    handlers.onConnectionChange("reconnecting");
+    callbacks.onConnectionChange("reconnecting");
     ws = new WebSocket(WS_URL);
 
     ws.onopen = () => {
-      handlers.onConnectionChange("connected");
+      attempt = 0;
+      console.log("[ws] connected, waiting for schema...");
     };
 
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
         switch (msg.type) {
-          case "step":
-            handlers.onStep(msg.data as StepMetrics);
+          case "schema": {
+            const names = (msg.tables as TableSchema[]).map((t) => t.name);
+            console.log("[ws] schema received:", names.join(", "));
+            handleSchema(msg.tables as TableSchema[]);
+            const hashes = db.getHashes();
+            console.log("[ws] sending hashes:", hashes);
+            ws?.send(JSON.stringify({ hashes }));
             break;
-          case "layers":
-            handlers.onLayers(msg.data as LayerStat[]);
+          }
+
+          case "dump":
+            console.log(`[ws] dump: ${msg.table} (${msg.rows.length} rows)`);
+            db.applyDump(msg.table, msg.rows);
             break;
-          case "activations":
-            handlers.onActivations(msg.data as ActivationStat[]);
+
+          case "ready":
+            console.log("[ws] sync complete, ready");
+            db.resetDumpState();
+            callbacks.onConnectionChange("connected");
+            callbacks.onReady();
             break;
-          case "generation":
-            handlers.onGeneration(msg.data as Generation);
+
+          case "op":
+            console.debug(`[ws] op: ${msg.op} ${msg.table}`);
+            db.applyOp(msg);
             break;
-          case "status":
-            handlers.onStatus(msg.data);
+
+          case "ops":
+            console.debug(`[ws] ops: ${msg.op} ${msg.table} (${msg.rows.length} rows)`);
+            db.applyOps(msg);
             break;
-          case "log":
-            handlers.onLog(msg.data);
-            break;
+
+          default:
+            console.log("[ws] unknown message type:", msg.type);
         }
       } catch (err) {
-        console.warn("Failed to parse WS message:", err);
+        console.warn("[ws] message error:", err);
       }
     };
 
     ws.onclose = () => {
       if (!closed) {
-        handlers.onConnectionChange("disconnected");
-        reconnectTimer = setTimeout(connect, 2000);
+        callbacks.onConnectionChange("disconnected");
+        const delay = Math.min(BASE_DELAY * Math.pow(2, attempt), MAX_DELAY);
+        attempt++;
+        console.log(`[ws] disconnected, retrying in ${delay}ms`);
+        reconnectTimer = setTimeout(connect, delay);
       }
     };
 
@@ -78,4 +106,13 @@ export function createWebSocket(handlers: WSHandlers): () => void {
     clearTimeout(reconnectTimer);
     ws?.close();
   };
+}
+
+/** Register any new tables from the schema message. */
+function handleSchema(tables: TableSchema[]) {
+  for (const schema of tables) {
+    if (!db.tables.has(schema.name)) {
+      db.addTable(schema);
+    }
+  }
 }

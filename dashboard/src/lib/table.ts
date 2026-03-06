@@ -119,6 +119,26 @@ export class Table {
     this._bump();
   }
 
+  /** Fast bulk insert — skips per-row lookups, recomputes hash once at end.
+   *  Use only when the table is known to be empty or caller handles clearing. */
+  bulkInsert(rows: Record<string, unknown>[]): void {
+    if (rows.length === 0) return;
+    const cols = Object.keys(rows[0]);
+    const placeholders = cols.map(() => "?").join(", ");
+    const sql = `INSERT OR REPLACE INTO ${this.schema.name} (${cols.join(", ")}) VALUES (${placeholders})`;
+    const sorted = this._colNames.slice().sort();
+
+    for (const row of rows) {
+      const values = cols.map((c) => row[c]);
+      this._db.run(sql, values as (string | number | null | Uint8Array)[]);
+      // Compute hash inline without re-reading the row
+      const str = JSON.stringify(sorted.map((c) => row[c] ?? null));
+      this._hash ^= djb2(str);
+    }
+
+    this._bump();
+  }
+
   /** Select rows with optional WHERE, params, orderBy, columns. */
   select(opts?: {
     where?: string;

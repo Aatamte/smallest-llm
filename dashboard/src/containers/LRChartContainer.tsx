@@ -1,52 +1,18 @@
-import { useEffect, useRef } from "react";
-import { useStore } from "jotai";
-import { stepsAtom } from "../storage";
+import { useCallback } from "react";
+import { useAtomValue } from "jotai";
+import { activeRunIdAtom } from "../storage";
 import { LRChart } from "../components/LRChart";
+import { useQuery } from "../db/hooks";
+import { getMetricSeries } from "../db/queries";
 
 export function LRChartContainer() {
-  const store = useStore();
-  const xData = useRef<number[]>([0]);
-  const yData = useRef<number[]>([0]);
-  const lastLen = useRef(0);
-
-  const onDataRef = useRef<((x: number[], y: number[]) => void) | null>(null);
-
-  useEffect(() => {
-    const unsub = store.sub(stepsAtom, () => {
-      const steps = store.get(stepsAtom);
-
-      if (steps.length === 0) {
-        xData.current = [0];
-        yData.current = [0];
-        lastLen.current = 0;
-        onDataRef.current?.(xData.current.slice(), yData.current.slice());
-        return;
-      }
-
-      if (steps.length <= lastLen.current) {
-        lastLen.current = steps.length;
-        return;
-      }
-
-      const news = steps.slice(lastLen.current);
-      lastLen.current = steps.length;
-      for (const m of news) {
-        xData.current.push(m.step);
-        yData.current.push(m.lr);
-      }
-      onDataRef.current?.(
-        xData.current.slice(),
-        yData.current.slice(),
-      );
-    });
-    return unsub;
-  }, [store]);
+  const runId = useAtomValue(activeRunIdAtom);
+  const points = useQuery(useCallback(() => getMetricSeries("lr", runId), [runId]));
 
   return (
     <LRChart
-      initialX={xData.current}
-      initialY={yData.current}
-      onDataRef={onDataRef}
+      x={points.map((p) => p.step)}
+      y={points.map((p) => p.value)}
     />
   );
 }

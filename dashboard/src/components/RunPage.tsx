@@ -99,8 +99,10 @@ function RunList({
                         toggleOne(run.id);
                       }}
                     />
-                    <button
+                    <div
                       className="run-item run-item-clickable"
+                      role="button"
+                      tabIndex={0}
                       onClick={() => onSelectRun(run.id)}
                     >
                       <div className="run-item-left">
@@ -132,7 +134,7 @@ function RunList({
                           </svg>
                         </button>
                       </div>
-                    </button>
+                    </div>
                   </div>
                 ))}
             </div>

@@ -23,9 +23,12 @@ class MetricsTable(Table):
     ]
 
     def log(self, run_id: int, step: int, metrics: dict[str, float]):
+        rows = []
         for k, v in metrics.items():
             if isinstance(v, (int, float)) and not math.isnan(v) and not math.isinf(v):
-                self.insert(run_id=run_id, step=step, key=k, value=v)
+                rows.append({"run_id": run_id, "step": step, "key": k, "value": v})
+        if rows:
+            self.insert_many(rows)
 
     def get(self, run_id: int, key: str | None = None) -> list[dict]:
         if key:

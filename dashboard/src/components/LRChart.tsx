@@ -1,47 +1,43 @@
-import { useEffect, useRef, type MutableRefObject } from "react";
-import uPlot from "uplot";
-import "uplot/dist/uPlot.min.css";
-import { CHART_COLORS, baseOpts } from "../types/chart";
+import { useMemo } from "react";
+import createPlotlyComponent from "react-plotly.js/factory";
+import Plotly from "plotly.js-dist-min";
+import { CHART_COLORS, basePlotlyLayout, basePlotlyConfig } from "../types/chart";
+import type { Data } from "plotly.js-dist-min";
+
+const Plot = createPlotlyComponent(Plotly);
+
+const CHART_HEIGHT = 400;
 
 export interface LRChartProps {
-  initialX: number[];
-  initialY: number[];
-  onDataRef: MutableRefObject<((x: number[], y: number[]) => void) | null>;
+  x: number[];
+  y: number[];
 }
 
-export function LRChart({ initialX, initialY, onDataRef }: LRChartProps) {
-  const divRef = useRef<HTMLDivElement>(null);
-  const plotRef = useRef<uPlot | null>(null);
+export function LRChart({ x, y }: LRChartProps) {
+  const traces = useMemo((): Data[] => [
+    {
+      x,
+      y,
+      name: "LR",
+      type: "scatter",
+      mode: "lines",
+      line: { color: CHART_COLORS.lr, width: 2 },
+    },
+  ], [x, y]);
 
-  useEffect(() => {
-    const el = divRef.current;
-    if (!el) return;
-
-    const plot = new uPlot({
-      ...baseOpts(800, 400),
-      series: [
-        {},
-        { label: "LR", stroke: CHART_COLORS.lr, width: 2 },
-      ],
-    } as uPlot.Options, [initialX, initialY], el);
-
-    plotRef.current = plot;
-
-    onDataRef.current = (x, y) => {
-      plotRef.current?.setData([x, y]);
-    };
-
-    return () => {
-      plot.destroy();
-      plotRef.current = null;
-      onDataRef.current = null;
-    };
-  }, []);
+  const layout = useMemo(() => basePlotlyLayout({ height: CHART_HEIGHT }), []);
+  const config = useMemo(() => basePlotlyConfig(), []);
 
   return (
     <div className="panel">
       <h3 className="panel-title">Learning Rate</h3>
-      <div ref={divRef} />
+      <Plot
+        data={traces}
+        layout={layout}
+        config={config}
+        useResizeHandler
+        style={{ width: "100%", height: CHART_HEIGHT }}
+      />
     </div>
   );
 }

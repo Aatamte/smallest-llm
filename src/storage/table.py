@@ -53,6 +53,11 @@ class Table:
         """Set a broadcaster to emit CDC ops on mutations."""
         self._broadcaster = broadcaster
 
+    def _init_hash(self):
+        """Compute hash from existing rows in the table."""
+        with self._lock:
+            self._rehash_unlocked()
+
     def create(self):
         """Generate and execute CREATE TABLE + CREATE INDEX statements."""
         col_defs = []
@@ -106,6 +111,35 @@ class Table:
                 self._emit_op("upsert", row=row)
             return rowid
 
+    def insert_many(self, rows: list[dict]) -> list[int]:
+        """Batch INSERT with one transaction, one read-back, one CDC emit."""
+        if not rows:
+            return []
+        rowids: list[int] = []
+        with self._lock:
+            for row in rows:
+                cols = list(row.keys())
+                placeholders = ", ".join("?" for _ in cols)
+                col_names = ", ".join(cols)
+                values = [row[c] for c in cols]
+                cursor = self._conn.execute(
+                    f"INSERT INTO {self.name} ({col_names}) VALUES ({placeholders})",
+                    values,
+                )
+                rowids.append(cursor.lastrowid)
+            self._conn.commit()
+            # Batch read-back and hash
+            inserted_rows = []
+            for rowid in rowids:
+                full_row = self._get_by_pk_unlocked(rowid)
+                if full_row:
+                    self._hash ^= self._hash_row(full_row)
+                    inserted_rows.append(full_row)
+            # One batched CDC emit
+            if inserted_rows:
+                self._emit_ops("upsert", rows=inserted_rows)
+        return rowids
+
     def select(
         self,
         where: str | None = None,
@@ -141,21 +175,26 @@ class Table:
             # Split params: count ? in set_clause for SET params, rest are WHERE params
             set_count = set_clause.count("?")
             where_params = all_params[set_count:]
-            # Get PKs of affected rows before update
-            affected = self._conn.execute(
-                f"SELECT {self.pk_col} FROM {self.name} WHERE {where}", where_params
+            # Read full rows before update to XOR out old hashes
+            old_rows = self._conn.execute(
+                f"SELECT * FROM {self.name} WHERE {where}", where_params
             ).fetchall()
-            pk_vals = [row[0] for row in affected]
+            for row in old_rows:
+                self._hash ^= self._hash_row(dict(row))
+            pk_vals = [dict(row)[self.pk_col] for row in old_rows]
             self._conn.execute(
                 f"UPDATE {self.name} SET {set_clause} WHERE {where}", all_params
             )
             self._conn.commit()
-            self._rehash_unlocked()
-            # Emit upsert ops for updated rows
+            # Read back updated rows, XOR in new hashes, emit CDC
+            updated_rows = []
             for pk in pk_vals:
                 row = self._get_by_pk_unlocked(pk)
                 if row:
-                    self._emit_op("upsert", row=row)
+                    self._hash ^= self._hash_row(row)
+                    updated_rows.append(row)
+            if updated_rows:
+                self._emit_ops("upsert", rows=updated_rows)
 
     def upsert(self, **kwargs) -> int:
         """INSERT OR REPLACE a row. Requires explicit primary key value."""
@@ -192,6 +231,7 @@ class Table:
             if pk_val is None:
                 raise ValueError(f'Row must include primary key column "{self.pk_col}"')
         with self._lock:
+            upserted_rows = []
             for row in rows:
                 pk_val = row[self.pk_col]
                 existing = self._get_by_pk_unlocked(pk_val)
@@ -208,8 +248,10 @@ class Table:
                 inserted = self._get_by_pk_unlocked(pk_val)
                 if inserted:
                     self._hash ^= self._hash_row(inserted)
-                    self._emit_op("upsert", row=inserted)
+                    upserted_rows.append(inserted)
             self._conn.commit()
+            if upserted_rows:
+                self._emit_ops("upsert", rows=upserted_rows)
 
     def clear(self):
         """Delete all rows from the table."""
@@ -277,9 +319,14 @@ class Table:
         return dict(row) if row else None
 
     def _emit_op(self, op: str, row: dict | None = None, key=None):
-        """Emit a CDC op to the broadcaster if set."""
+        """Emit a single CDC op to the broadcaster if set."""
         if self._broadcaster is not None:
             self._broadcaster.publish_op(self.name, op, row=row, key=key)
+
+    def _emit_ops(self, op: str, rows: list[dict]):
+        """Emit a batched CDC op to the broadcaster if set."""
+        if self._broadcaster is not None:
+            self._broadcaster.publish_ops(self.name, op, rows=rows)
 
     def _rehash_unlocked(self):
         """Recompute hash from all rows. Caller must hold lock."""

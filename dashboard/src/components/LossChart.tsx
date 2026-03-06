@@ -1,62 +1,80 @@
-import { useEffect, useRef, type MutableRefObject } from "react";
-import uPlot from "uplot";
-import "uplot/dist/uPlot.min.css";
-import { CHART_COLORS, baseOpts } from "../types/chart";
+import { useMemo } from "react";
+import createPlotlyComponent from "react-plotly.js/factory";
+import Plotly from "plotly.js-dist-min";
+import { CHART_COLORS, basePlotlyLayout, basePlotlyConfig } from "../types/chart";
+import type { Data } from "plotly.js-dist-min";
 
-export interface LossChartProps {
-  initialX: number[];
-  initialTrain: number[];
-  initialVal: number[];
-  onDataRef: MutableRefObject<((x: number[], train: number[], val: number[]) => void) | null>;
+const Plot = createPlotlyComponent(Plotly);
+
+const CHART_HEIGHT = 350;
+
+export interface CompareSeries {
+  name: string;
+  x: number[];
+  y: number[];
+  color: string;
 }
 
-export function LossChart({ initialX, initialTrain, initialVal, onDataRef }: LossChartProps) {
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const divRef = useRef<HTMLDivElement>(null);
-  const plotRef = useRef<uPlot | null>(null);
+export interface LossChartProps {
+  trainX: number[];
+  trainY: number[];
+  valX: number[];
+  valY: number[];
+  compareSeries: CompareSeries[];
+}
 
-  useEffect(() => {
-    const wrap = wrapRef.current;
-    const el = divRef.current;
-    if (!wrap || !el) return;
+export function LossChart({ trainX, trainY, valX, valY, compareSeries }: LossChartProps) {
+  const traces = useMemo((): Data[] => {
+    const t: Data[] = [
+      {
+        x: trainX,
+        y: trainY,
+        name: "Train",
+        type: "scatter",
+        mode: "lines",
+        line: { color: CHART_COLORS.trainLoss, width: 2 },
+      },
+    ];
+    if (valX.length > 0) {
+      t.push({
+        x: valX,
+        y: valY,
+        name: "Val",
+        type: "scatter",
+        mode: "lines",
+        line: { color: CHART_COLORS.valLoss, width: 2, dash: "dash" },
+      });
+    }
+    for (const s of compareSeries) {
+      t.push({
+        x: s.x,
+        y: s.y,
+        name: s.name,
+        type: "scatter",
+        mode: "lines",
+        line: { color: s.color, width: 1.5 },
+      });
+    }
+    return t;
+  }, [trainX, trainY, valX, valY, compareSeries]);
 
-    const w = wrap.clientWidth;
-
-    const plot = new uPlot({
-      ...baseOpts(w, 350),
-      series: [
-        {},
-        { label: "Train", stroke: CHART_COLORS.trainLoss, width: 2 },
-        { label: "Val", stroke: CHART_COLORS.valLoss, width: 2, dash: [4, 4] },
-      ],
-    } as uPlot.Options, [initialX, initialTrain, initialVal], el);
-
-    plotRef.current = plot;
-
-    onDataRef.current = (x, train, val) => {
-      plotRef.current?.setData([x, train, val]);
-    };
-
-    const ro = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (entry && plotRef.current) {
-        plotRef.current.setSize({ width: entry.contentRect.width, height: 350 });
-      }
-    });
-    ro.observe(wrap);
-
-    return () => {
-      ro.disconnect();
-      plot.destroy();
-      plotRef.current = null;
-      onDataRef.current = null;
-    };
-  }, []);
+  const layout = useMemo(() => ({
+    ...basePlotlyLayout({ height: CHART_HEIGHT }),
+    showlegend: true,
+    legend: { font: { color: CHART_COLORS.text, size: 10 }, bgcolor: "transparent" },
+  }), []);
+  const config = useMemo(() => basePlotlyConfig(), []);
 
   return (
-    <div className="panel" ref={wrapRef}>
+    <div className="panel">
       <h3 className="panel-title">Loss</h3>
-      <div ref={divRef} />
+      <Plot
+        data={traces}
+        layout={layout}
+        config={config}
+        useResizeHandler
+        style={{ width: "100%", height: CHART_HEIGHT }}
+      />
     </div>
   );
 }

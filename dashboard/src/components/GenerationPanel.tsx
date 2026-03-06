@@ -1,8 +1,12 @@
+import { useCallback } from "react";
 import { useAtomValue } from "jotai";
-import { generationsAtom } from "../storage";
+import { activeRunIdAtom } from "../storage";
+import { useQuery } from "../db/hooks";
+import { getGenerations } from "../db/queries";
 
 export function GenerationPanel() {
-  const generations = useAtomValue(generationsAtom);
+  const runId = useAtomValue(activeRunIdAtom);
+  const generations = useQuery(useCallback(() => getGenerations(runId), [runId]));
 
   return (
     <div className="panel">
@@ -11,7 +15,7 @@ export function GenerationPanel() {
         {generations.length === 0 ? (
           <div className="panel-empty">Waiting for generations...</div>
         ) : (
-          [...generations].reverse().map((gen, i) => (
+          generations.map((gen, i) => (
             <div key={`${gen.step}-${i}`} className="generation-item">
               <div className="generation-header">
                 <span className="generation-step">step {gen.step}</span>

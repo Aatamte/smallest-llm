@@ -23,17 +23,21 @@ class ActivationStatsTable(Table):
     ]
 
     def log(self, run_id: int, step: int, stats: list[dict]):
-        for s in stats:
-            self.insert(
-                run_id=run_id,
-                step=step,
-                layer=s["name"],
-                mean=s.get("mean"),
-                std=s.get("std"),
-                min_val=s.get("min"),
-                max_val=s.get("max"),
-                pct_zero=s.get("pct_zero"),
-            )
+        rows = [
+            {
+                "run_id": run_id,
+                "step": step,
+                "layer": s["name"],
+                "mean": s.get("mean"),
+                "std": s.get("std"),
+                "min_val": s.get("min"),
+                "max_val": s.get("max"),
+                "pct_zero": s.get("pct_zero"),
+            }
+            for s in stats
+        ]
+        if rows:
+            self.insert_many(rows)
 
     def get(self, run_id: int, step: int | None = None) -> list[dict]:
         if step is not None:

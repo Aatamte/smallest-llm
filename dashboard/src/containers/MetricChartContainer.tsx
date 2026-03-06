@@ -1,13 +1,13 @@
-import { useEffect, useRef } from "react";
-import { useStore, useAtomValue } from "jotai";
-import { stepsAtom } from "../storage";
+import { useCallback, useMemo } from "react";
+import { useAtomValue } from "jotai";
+import { activeRunIdAtom } from "../storage";
 import { MetricChart } from "../components/MetricChart";
-import type { StepMetrics } from "../types/metrics";
-
-type MetricKey = keyof StepMetrics;
+import { useQuery } from "../db/hooks";
+import { getMetricSeries } from "../db/queries";
+import type { Data } from "plotly.js-dist-min";
 
 export interface MetricChartContainerProps {
-  metricKey: MetricKey;
+  metricKey: string;
   label: string;
   color: string;
   format?: (v: number) => string;
@@ -21,58 +21,33 @@ export function MetricChartContainer({
   format = (v) => v.toFixed(4),
   sub,
 }: MetricChartContainerProps) {
-  const store = useStore();
-  const steps = useAtomValue(stepsAtom);
-  const xData = useRef<number[]>([0]);
-  const yData = useRef<number[]>([0]);
-  const lastLen = useRef(0);
-  const onDataRef = useRef<((x: number[], y: number[]) => void) | null>(null);
+  const runId = useAtomValue(activeRunIdAtom);
 
-  useEffect(() => {
-    const unsub = store.sub(stepsAtom, () => {
-      const allSteps = store.get(stepsAtom);
+  const points = useQuery(useCallback(() => getMetricSeries(metricKey, runId), [metricKey, runId]));
 
-      if (allSteps.length === 0) {
-        xData.current = [0];
-        yData.current = [0];
-        lastLen.current = 0;
-        onDataRef.current?.(xData.current.slice(), yData.current.slice());
-        return;
-      }
+  const traces = useMemo((): Data[] => [
+    {
+      x: points.map((p) => p.step),
+      y: points.map((p) => p.value),
+      name: label,
+      type: "scatter",
+      mode: "lines",
+      line: { color, width: 1.5 },
+      fill: "tozeroy",
+      fillcolor: color + "18",
+    },
+  ], [points, label, color]);
 
-      if (allSteps.length <= lastLen.current) {
-        lastLen.current = allSteps.length;
-        return;
-      }
-
-      const news = allSteps.slice(lastLen.current);
-      lastLen.current = allSteps.length;
-      for (const m of news) {
-        const val = m[metricKey];
-        if (val !== undefined && typeof val === "number") {
-          xData.current.push(m.step);
-          yData.current.push(val);
-        }
-      }
-      onDataRef.current?.(xData.current.slice(), yData.current.slice());
-    });
-    return unsub;
-  }, [store, metricKey]);
-
-  // Current value from latest step
-  const last = steps.length > 0 ? steps[steps.length - 1] : null;
-  const rawVal = last ? (last[metricKey] as number | undefined) : undefined;
-  const currentValue = rawVal !== undefined ? format(rawVal) : "—";
+  const last = points.length > 0 ? points[points.length - 1] : null;
+  const currentValue = last ? format(last.value) : "—";
 
   return (
     <MetricChart
       label={label}
-      color={color}
       currentValue={currentValue}
+      valueColor={color}
       sub={sub}
-      initialX={xData.current}
-      initialY={yData.current}
-      onDataRef={onDataRef}
+      traces={traces}
     />
   );
 }

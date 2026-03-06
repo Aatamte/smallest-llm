@@ -1,17 +1,19 @@
-import { useEffect, useState } from "react";
-import { useAtomValue, useAtom, useSetAtom } from "jotai";
-import { statusAtom, activeRunIdAtom, availableRunsAtom, resetAtom, subPageAtom } from "../storage";
+import { useCallback, useEffect, useState } from "react";
+import { useAtomValue, useAtom } from "jotai";
+import { activeRunIdAtom } from "../storage";
+import { subPageAtom } from "../storage/atoms/uiAtoms";
 import { navigateTo } from "../storage/atoms/uiAtoms";
-import { startRun, deleteRun, bulkDeleteRuns, fetchConfig, fetchRuns, fetchPresets, fetchPreset } from "../api/client";
+import { useQuery } from "../db/hooks";
+import { getStatus, getRuns } from "../db/queries";
+import { startRun, deleteRun, bulkDeleteRuns, fetchConfig, fetchPresets, fetchPreset } from "../api/client";
 import { RunPage } from "../components/RunPage";
 
 export function RunContainer() {
   const sub = useAtomValue(subPageAtom);
-  const status = useAtomValue(statusAtom);
   const [activeRunId, setActiveRunId] = useAtom(activeRunIdAtom);
-  const setStatus = useSetAtom(statusAtom);
-  const reset = useSetAtom(resetAtom);
-  const [runs, setRuns] = useAtom(availableRunsAtom);
+
+  const status = useQuery(useCallback(() => getStatus(activeRunId), [activeRunId]));
+  const runs = useQuery(useCallback(() => getRuns(), []));
 
   // New run state
   const [config, setConfig] = useState<Record<string, unknown> | null>(null);
@@ -19,12 +21,6 @@ export function RunContainer() {
   const [activePreset, setActivePreset] = useState("default");
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (sub !== "new") {
-      fetchRuns().then(setRuns).catch((e) => console.warn("Failed to fetch runs:", e));
-    }
-  }, [sub, setRuns]);
 
   useEffect(() => {
     if (sub === "new") {
@@ -35,13 +31,12 @@ export function RunContainer() {
 
   function selectRun(id: number) {
     setActiveRunId(id);
-    navigateTo("metrics");
+    navigateTo("train", "metrics");
   }
 
   async function handleDeleteRun(id: number) {
     try {
       await deleteRun(id);
-      setRuns(runs.filter((r) => r.id !== id));
       if (activeRunId === id) {
         setActiveRunId(null);
       }
@@ -54,7 +49,6 @@ export function RunContainer() {
     try {
       await bulkDeleteRuns(ids);
       const idSet = new Set(ids);
-      setRuns(runs.filter((r) => !idSet.has(r.id)));
       if (activeRunId != null && idSet.has(activeRunId)) {
         setActiveRunId(null);
       }
@@ -85,11 +79,9 @@ export function RunContainer() {
     setStarting(true);
     setError(null);
     try {
-      reset();
       const result = await startRun(config ?? undefined);
       setActiveRunId(result.run_id);
-      setStatus("training");
-      navigateTo("metrics");
+      navigateTo("train", "metrics");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start run");
     } finally {

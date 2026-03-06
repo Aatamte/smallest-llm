@@ -21,15 +21,19 @@ class LayerStatsTable(Table):
     ]
 
     def log(self, run_id: int, step: int, stats: list[dict]):
-        for s in stats:
-            self.insert(
-                run_id=run_id,
-                step=step,
-                layer=s["name"],
-                grad_norm=s.get("grad_norm"),
-                weight_norm=s.get("weight_norm"),
-                update_ratio=s.get("update_ratio"),
-            )
+        rows = [
+            {
+                "run_id": run_id,
+                "step": step,
+                "layer": s["name"],
+                "grad_norm": s.get("grad_norm"),
+                "weight_norm": s.get("weight_norm"),
+                "update_ratio": s.get("update_ratio"),
+            }
+            for s in stats
+        ]
+        if rows:
+            self.insert_many(rows)
 
     def get(self, run_id: int, step: int | None = None) -> list[dict]:
         if step is not None:

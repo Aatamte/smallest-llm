@@ -31,6 +31,7 @@ class Database:
         """Create all registered tables. Call after registering tables in subclass __init__."""
         for t in self._tables:
             t.create()
+            t._init_hash()
 
     @property
     def conn(self) -> sqlite3.Connection:

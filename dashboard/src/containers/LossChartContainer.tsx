@@ -1,28 +1,22 @@
+import { useCallback } from "react";
 import { useAtomValue } from "jotai";
-import { stepsAtom } from "../storage";
+import { activeRunIdAtom } from "../storage";
 import { LossChart } from "../components/LossChart";
+import { useQuery } from "../db/hooks";
+import { getTrainLossSeries, getValLossSeries } from "../db/queries";
 
 export function LossChartContainer() {
-  const steps = useAtomValue(stepsAtom);
+  const runId = useAtomValue(activeRunIdAtom);
 
-  const trainX = steps.map((s) => s.step);
-  const trainY = steps.map((s) => s.trainLoss);
-
-  const valX: number[] = [];
-  const valY: number[] = [];
-  for (const s of steps) {
-    if (s.valLoss !== undefined) {
-      valX.push(s.step);
-      valY.push(s.valLoss);
-    }
-  }
+  const train = useQuery(useCallback(() => getTrainLossSeries(runId), [runId]));
+  const val = useQuery(useCallback(() => getValLossSeries(runId), [runId]));
 
   return (
     <LossChart
-      trainX={trainX}
-      trainY={trainY}
-      valX={valX}
-      valY={valY}
+      trainX={train.map((p) => p.step)}
+      trainY={train.map((p) => p.value)}
+      valX={val.map((p) => p.step)}
+      valY={val.map((p) => p.value)}
       compareSeries={[]}
     />
   );

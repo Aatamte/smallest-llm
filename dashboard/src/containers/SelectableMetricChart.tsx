@@ -1,9 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
-import { useAtomValue } from "jotai";
 import createPlotlyComponent from "react-plotly.js/factory";
 import Plotly from "plotly.js-dist-min";
-import { compareRunsDataAtom } from "../storage";
-import { basePlotlyLayout, basePlotlyConfig, COMPARE_COLORS } from "../types/chart";
+import { basePlotlyLayout, basePlotlyConfig } from "../types/chart";
 import type { Data } from "plotly.js-dist-min";
 import { useQuery } from "../db/hooks";
 import { getMetricSeries } from "../db/queries";
@@ -25,11 +23,9 @@ const METRIC_OPTIONS: { key: string; label: string }[] = [
 ];
 
 export function SelectableMetricChart() {
-  const compareData = useAtomValue(compareRunsDataAtom);
   const [selected, setSelected] = useState("trainLoss");
 
   const points = useQuery(useCallback(() => getMetricSeries(selected), [selected]));
-  const compareEntries = Object.entries(compareData);
 
   const traces = useMemo((): Data[] => {
     const label = METRIC_OPTIONS.find((o) => o.key === selected)?.label ?? selected;
@@ -44,19 +40,8 @@ export function SelectableMetricChart() {
         fill: "tozeroy",
         fillcolor: ACTIVE_COLOR + "18",
       },
-      ...compareEntries.map(([, d], i) => {
-        const cpts = d.series[selected] ?? [];
-        return {
-          x: cpts.map((p) => p.step),
-          y: cpts.map((p) => p.value),
-          name: d.name,
-          type: "scatter" as const,
-          mode: "lines" as const,
-          line: { color: COMPARE_COLORS[i % COMPARE_COLORS.length], width: 1.5, dash: "dash" as const },
-        };
-      }),
     ];
-  }, [points, compareData, selected]);
+  }, [points, selected]);
 
   const layout = useMemo(
     () => basePlotlyLayout({ height: CHART_HEIGHT }),

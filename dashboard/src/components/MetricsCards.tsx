@@ -1,12 +1,8 @@
+import { useCallback } from "react";
 import { useAtomValue } from "jotai";
-import {
-  currentTrainLossAtom,
-  currentValLossAtom,
-  bestValLossAtom,
-  tokensPerSecAtom,
-  tokensSeenAtom,
-  bpcAtom,
-} from "../storage";
+import { activeRunIdAtom } from "../storage";
+import { useQuery } from "../db/hooks";
+import { getLatestMetric } from "../db/queries";
 
 interface CardProps {
   label: string;
@@ -25,12 +21,13 @@ function Card({ label, value, sub }: CardProps) {
 }
 
 export function MetricsCards() {
-  const trainLoss = useAtomValue(currentTrainLossAtom);
-  const valLoss = useAtomValue(currentValLossAtom);
-  const bestVal = useAtomValue(bestValLossAtom);
-  const tokSec = useAtomValue(tokensPerSecAtom);
-  const tokensSeen = useAtomValue(tokensSeenAtom);
-  const bpc = useAtomValue(bpcAtom);
+  const runId = useAtomValue(activeRunIdAtom);
+
+  const trainLoss = useQuery(useCallback(() => getLatestMetric(runId, "trainLoss"), [runId]));
+  const valLoss = useQuery(useCallback(() => getLatestMetric(runId, "valLoss"), [runId]));
+  const bpc = useQuery(useCallback(() => getLatestMetric(runId, "bpc"), [runId]));
+  const tokSec = useQuery(useCallback(() => getLatestMetric(runId, "tokensPerSec"), [runId]));
+  const tokensSeen = useQuery(useCallback(() => getLatestMetric(runId, "tokensSeen"), [runId]));
 
   const formatTokens = (n: number) => {
     if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
@@ -43,15 +40,11 @@ export function MetricsCards() {
     <div className="panel metrics-cards-panel">
       <h3 className="panel-title">Key Metrics</h3>
       <div className="metrics-grid">
-        <Card label="Train Loss" value={trainLoss.toFixed(4)} />
+        <Card label="Train Loss" value={trainLoss > 0 ? trainLoss.toFixed(4) : "—"} />
         <Card label="Val Loss" value={valLoss > 0 ? valLoss.toFixed(4) : "—"} />
-        <Card
-          label="Best Val"
-          value={bestVal < Infinity ? bestVal.toFixed(4) : "—"}
-        />
         <Card label="BPC" value={bpc > 0 ? bpc.toFixed(3) : "—"} sub="bits/char" />
-        <Card label="Tokens/s" value={formatTokens(Math.round(tokSec))} />
-        <Card label="Tokens Seen" value={formatTokens(tokensSeen)} />
+        <Card label="Tokens/s" value={tokSec > 0 ? formatTokens(Math.round(tokSec)) : "—"} />
+        <Card label="Tokens Seen" value={tokensSeen > 0 ? formatTokens(tokensSeen) : "—"} />
       </div>
     </div>
   );

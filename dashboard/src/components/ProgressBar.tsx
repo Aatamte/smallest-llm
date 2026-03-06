@@ -1,12 +1,17 @@
+import { useCallback } from "react";
 import { useAtomValue } from "jotai";
-import { currentStepAtom, maxStepsAtom, tokensSeenAtom, tokensPerSecAtom, tokensPerStepAtom } from "../storage";
+import { activeRunIdAtom } from "../storage";
+import { useQuery } from "../db/hooks";
+import { getCurrentStep, getMaxSteps, getLatestMetric, getTokensPerStep } from "../db/queries";
 
 export function ProgressBar() {
-  const step = useAtomValue(currentStepAtom);
-  const maxSteps = useAtomValue(maxStepsAtom);
-  const tokensSeen = useAtomValue(tokensSeenAtom);
-  const tokensPerSec = useAtomValue(tokensPerSecAtom);
-  const tokensPerStep = useAtomValue(tokensPerStepAtom);
+  const runId = useAtomValue(activeRunIdAtom);
+
+  const step = useQuery(useCallback(() => getCurrentStep(runId), [runId]));
+  const maxSteps = useQuery(useCallback(() => getMaxSteps(runId), [runId]));
+  const tokensSeen = useQuery(useCallback(() => getLatestMetric(runId, "tokensSeen"), [runId]));
+  const tokensPerSec = useQuery(useCallback(() => getLatestMetric(runId, "tokensPerSec"), [runId]));
+  const tokensPerStep = useQuery(useCallback(() => getTokensPerStep(runId), [runId]));
 
   const progress = maxSteps > 0 ? (step / maxSteps) * 100 : 0;
 

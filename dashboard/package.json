@@ -11,9 +11,11 @@
   },
   "dependencies": {
     "jotai": "^2.18.0",
+    "plotly.js-dist-min": "^3.4.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "uplot": "^1.6.32"
+    "react-plotly.js": "^2.6.0",
+    "sql.js": "^1.14.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
