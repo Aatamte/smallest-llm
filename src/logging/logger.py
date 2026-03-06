@@ -1,17 +1,17 @@
-"""Logging: SQLite + console + live broadcast."""
+"""Logging: SQLite tables + console. CDC ops are emitted automatically by Table."""
 
 from __future__ import annotations
 
-import math
 import sys
 from typing import TYPE_CHECKING
 
+from src.types.activation_stat import ActivationStatRecord
+from src.types.layer_stat import LayerStatRecord
+
 if TYPE_CHECKING:
     from src.config.base import LoggingConfig
-    from src.server.broadcast import Broadcaster
-    from src.storage.database import Database
+    from src.storage.impl.main import MainDatabase
     from src.types.status import WireStatus
-    from src.types.ws import LogLevel
 
 
 class Logger:
@@ -19,76 +19,95 @@ class Logger:
         self,
         config: LoggingConfig,
         experiment_name: str,
-        db: Database | None = None,
+        db: MainDatabase | None = None,
         run_id: int | None = None,
-        broadcaster: Broadcaster | None = None,
+        broadcaster=None,  # kept for backward compat, unused
     ):
         self.config = config
         self._db = db
         self._run_id = run_id
-        self._broadcaster = broadcaster
         self._step_count = 0
 
     def log_step(self, metrics: dict, step: int | None = None):
-        """Log metrics to SQLite, broadcast to WebSocket, and print to console."""
+        """Log metrics to SQLite. CDC ops are emitted automatically."""
         if step is None:
             step = metrics.get("train/step", self._step_count)
         self._step_count = step
 
-        # SQLite
         if self._db is not None and self._run_id is not None:
             self._db.log_metrics(self._run_id, step, metrics)
-
-        # Live broadcast to dashboard
-        if self._broadcaster is not None:
-            self._broadcaster.publish({
-                "type": "step",
-                "data": _to_step_metrics(step, metrics),
-            })
 
         # Console
         if step % self.config.console_interval == 0:
             self._print_metrics(metrics, step)
 
-    def broadcast_layers(self, layer_stats: list[dict]):
-        """Broadcast per-layer gradient/weight stats to dashboard."""
-        if self._broadcaster is not None:
-            self._broadcaster.publish({
-                "type": "layers",
-                "data": layer_stats,
-            })
+    def broadcast_layers(self, layer_stats: list[LayerStatRecord]):
+        """Write per-layer gradient/weight stats to DB."""
+        if self._db is not None and self._run_id is not None:
+            stats = [
+                {"name": s.name, "grad_norm": s.grad_norm, "weight_norm": s.weight_norm, "update_ratio": s.update_ratio}
+                for s in layer_stats
+            ]
+            self._db.layer_stats.log(self._run_id, self._step_count, stats)
 
-    def broadcast_activations(self, stats: list[dict]):
-        """Broadcast per-layer activation stats to dashboard."""
-        if self._broadcaster is not None:
-            self._broadcaster.publish({
-                "type": "activations",
-                "data": stats,
-            })
+    def broadcast_activations(self, stats: list[ActivationStatRecord]):
+        """Write per-layer activation stats to DB."""
+        if self._db is not None and self._run_id is not None:
+            records = [
+                {"name": s.name, "mean": s.mean, "std": s.std, "min": s.min, "max": s.max, "pct_zero": s.pct_zero}
+                for s in stats
+            ]
+            self._db.activation_stats.log(self._run_id, self._step_count, records)
+
+    def broadcast_eval(self, step: int, results: dict):
+        """Eval results are logged via eval_db, not the main DB. No-op here."""
+        pass
 
     def broadcast_generation(self, step: int, prompt: str, output: str):
-        """Broadcast a sample generation to dashboard."""
-        if self._broadcaster is not None:
-            self._broadcaster.publish({
-                "type": "generation",
-                "data": {"step": step, "prompt": prompt, "output": output},
-            })
+        """Write a sample generation to DB."""
+        if self._db is not None and self._run_id is not None:
+            self._db.generations.log(self._run_id, step, prompt, output)
+
+    def broadcast_stage(
+        self,
+        stage_index: int,
+        stage_name: str,
+        total_stages: int,
+        dataset: str | None = None,
+        stage_type: str = "pretrain",
+    ):
+        """Write stage info to run_state table."""
+        if self._db is not None and self._run_id is not None:
+            self._db.run_state.set_stage(
+                self._run_id,
+                stage_index=stage_index,
+                stage_name=stage_name,
+                total_stages=total_stages,
+                dataset=dataset,
+                stage_type=stage_type,
+            )
+            parts = [f"Stage {stage_index + 1}/{total_stages}: {stage_name}"]
+            if dataset:
+                parts.append(f"· {dataset}")
+            if stage_type != "pretrain":
+                parts.append(f"· {stage_type.upper()}")
+            self.broadcast_text_state(" ".join(parts))
+        self.log(f"=== Stage {stage_index + 1}/{total_stages}: {stage_name} ===")
+
+    def broadcast_text_state(self, text: str):
+        """Write text state to run_state table."""
+        if self._db is not None and self._run_id is not None:
+            self._db.run_state.set_text_state(self._run_id, text)
 
     def broadcast_status(self, status: WireStatus):
-        """Broadcast training status change to dashboard."""
-        if self._broadcaster is not None:
-            self._broadcaster.publish({
-                "type": "status",
-                "data": status,
-            })
+        """Write training status to run_state table."""
+        if self._db is not None and self._run_id is not None:
+            self._db.run_state.set_status(self._run_id, status)
 
-    def log(self, message: str, level: LogLevel = "info"):
-        """Broadcast a log line to the dashboard and print to console."""
-        if self._broadcaster is not None:
-            self._broadcaster.publish({
-                "type": "log",
-                "data": {"level": level, "message": message},
-            })
+    def log(self, message: str, level: str = "info"):
+        """Write log line to DB and print to console."""
+        if self._db is not None:
+            self._db.logs.log(self._run_id, level, message)
         print(message, file=sys.stderr)
 
     def _print_metrics(self, metrics: dict, step: int):
@@ -105,25 +124,3 @@ class Logger:
 
     def close(self):
         pass
-
-
-def _to_step_metrics(step: int, m: dict) -> dict:
-    """Convert internal metric keys to dashboard StepMetrics shape."""
-    step_time = m.get("train/step_time", 0)
-    tokens_seen = int(m.get("train/tokens_seen", 0))
-    tokens_per_sec = tokens_seen / step_time if step_time > 0 else 0
-
-    result = {
-        "step": step,
-        "trainLoss": m.get("train/loss", 0),
-        "lr": m.get("train/lr", 0),
-        "gradNorm": m.get("train/grad_norm", 0),
-        "tokensSeen": tokens_seen,
-        "tokensPerSec": round(tokens_per_sec),
-        "stepTime": round(step_time, 4) if step_time else 0,
-    }
-    if "val/loss" in m:
-        result["valLoss"] = m["val/loss"]
-    if "train/loss" in m:
-        result["bpc"] = round(m["train/loss"] / math.log(2), 4)
-    return result

@@ -1,0 +1,73 @@
+{
+  "builder_name": "parquet",
+  "citation": "",
+  "config_name": "default",
+  "dataset_name": "piqa",
+  "dataset_size": 5332451,
+  "description": "",
+  "download_checksums": {
+    "hf://datasets/ybisk/piqa@142c51238b3ca2bc61e9a075913871b8b600e8e1/plain_text/train/0000.parquet": {
+      "num_bytes": 2657677,
+      "checksum": null
+    },
+    "hf://datasets/ybisk/piqa@142c51238b3ca2bc61e9a075913871b8b600e8e1/plain_text/validation/0000.parquet": {
+      "num_bytes": 301200,
+      "checksum": null
+    },
+    "hf://datasets/ybisk/piqa@142c51238b3ca2bc61e9a075913871b8b600e8e1/plain_text/test/0000.parquet": {
+      "num_bytes": 501652,
+      "checksum": null
+    }
+  },
+  "download_size": 3460529,
+  "features": {
+    "goal": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "sol1": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "sol2": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "label": {
+      "names": [
+        "0",
+        "1"
+      ],
+      "_type": "ClassLabel"
+    }
+  },
+  "homepage": "",
+  "license": "",
+  "size_in_bytes": 8792980,
+  "splits": {
+    "train": {
+      "name": "train",
+      "num_bytes": 4106017,
+      "num_examples": 16113,
+      "dataset_name": "piqa"
+    },
+    "validation": {
+      "name": "validation",
+      "num_bytes": 464539,
+      "num_examples": 1838,
+      "dataset_name": "piqa"
+    },
+    "test": {
+      "name": "test",
+      "num_bytes": 761895,
+      "num_examples": 3084,
+      "dataset_name": "piqa"
+    }
+  },
+  "version": {
+    "version_str": "0.0.0",
+    "major": 0,
+    "minor": 0,
+    "patch": 0
+  }
+}

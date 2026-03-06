@@ -34,4 +34,13 @@ def list_tasks() -> list[str]:
 # Import task modules to trigger registration.
 from src.evaluation.tasks import perplexity as _perplexity  # noqa: F401, E402
 from src.evaluation.tasks import blimp as _blimp  # noqa: F401, E402
+from src.evaluation.tasks import state_tracking as _state_tracking  # noqa: F401, E402
+from src.evaluation.tasks import generation_quality as _generation_quality  # noqa: F401, E402
+from src.evaluation.tasks import quick_loss as _quick_loss  # noqa: F401, E402
+from src.evaluation.tasks import ablation_suite as _ablation_suite  # noqa: F401, E402
+from src.evaluation.tasks import hellaswag as _hellaswag  # noqa: F401, E402
+from src.evaluation.tasks import arc as _arc  # noqa: F401, E402
+from src.evaluation.tasks import piqa as _piqa  # noqa: F401, E402
+from src.evaluation.tasks import winogrande as _winogrande  # noqa: F401, E402
+from src.evaluation.tasks import mmlu as _mmlu  # noqa: F401, E402
 from src.evaluation.tasks import lambada as _lambada  # noqa: F401, E402

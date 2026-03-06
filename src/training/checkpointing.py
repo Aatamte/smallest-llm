@@ -38,6 +38,7 @@ class CheckpointManager:
         scheduler,
         metrics: dict,
         tokens_seen: int,
+        flops_total: int = 0,
     ):
         """Save checkpoint with full state for exact resumption."""
         state = {
@@ -48,6 +49,7 @@ class CheckpointManager:
             "config": self.experiment_config.to_dict(),
             "metrics": metrics,
             "tokens_seen": tokens_seen,
+            "flops_total": flops_total,
             "rng_states": get_rng_states(),
         }
 

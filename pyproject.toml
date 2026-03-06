@@ -13,6 +13,7 @@ dependencies = [
     "transformers>=4.45.0",
     "accelerate>=1.0.0",
     "datasets>=2.14.0",
+    "lm-eval>=0.4.8",
 ]
 
 [build-system]

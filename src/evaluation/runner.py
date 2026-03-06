@@ -11,7 +11,7 @@ from src.evaluation.results import EvalResult
 from src.evaluation.tasks import get_task
 
 if TYPE_CHECKING:
-    from src.storage.eval_db import EvalDatabase
+    from src.storage import EvalDatabase
 
 
 class EvalCancelled(Exception):

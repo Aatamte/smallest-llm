@@ -1,80 +1,133 @@
 # smallest-llm
 
-The smallest language model that can do the most. Frontier techniques, crammed into the fewest parameters possible.
+Train real language models on a MacBook. Frontier techniques, crammed into the fewest parameters possible.
 
-## Goal
+## What This Is
 
-Build a tiny transformer LLM — under 10M parameters — that punches absurdly above its weight. Not a toy. Not a tutorial. A serious attempt to answer: **how much capability can you squeeze into the smallest possible model?**
+A complete LLM training framework — models, training loop, evaluation, and a real-time dashboard — all running locally on Apple Silicon. The goal: **how much capability can you squeeze into 300K-10M parameters?**
 
-Every architectural choice, every training technique, every byte of data is chosen to maximize capability per parameter and sample efficiency.
+## Models
 
-## Philosophy
+| Architecture | Description |
+|---|---|
+| **Transformer** | Baseline with RMSNorm, RoPE, SwiGLU, GQA, tied embeddings |
+| **Mamba** | Selective state space model (SSM) |
+| **Mamba-2** | Chunked SSD with multi-head state |
+| **Mamba-3** | SSD + trapezoidal discretization + RoPE + MLP blocks |
+| **Improved Mamba-3** | Fused SSD, gradient checkpointing |
 
-- **Every parameter earns its keep.** No wasted capacity. If a technique exists that gets more out of fewer params, we use it.
-- **Sample efficiency over scale.** We don't have billions of tokens. We make every training example count.
-- **Frontier techniques at tiny scale.** The same ideas powering the largest models — adapted and tuned for the smallest.
-- **Stable foundation, long-term thinking.** The training infrastructure is built to last. Clean abstractions, reproducible experiments, easy iteration.
+## Training Innovations
 
-## Architecture
+**Proven** (from ablation experiments):
+- **Muon optimizer** — 0.5 lower val loss than AdamW
+- **Muon + Echo Loss** — marginal gain over Muon alone
 
-Modern transformer, every component chosen for small-scale efficiency:
+**Experimental:**
+- **State Anchoring** — forces SSM to retain information across distances
+- **Gradient Sharpening** — keeps top-K% of gradient components, zeros noise
+- **Neuroplasticity** — progressive model growing
+- **Phantom Batches** — correlated pseudo-gradients from hidden states
+- **Hydra Training** — multi-scale sequence training (micro + macro)
 
-| Component | Choice | Why |
-|---|---|---|
-| Normalization | RMSNorm | Fewer params than LayerNorm, equally effective |
-| Positions | RoPE | No learned embeddings to waste params on |
-| Activation | SwiGLU | Better performance per FLOP than ReLU/GELU |
-| Attention | GQA / MQA | Saves params on KV heads without sacrificing quality |
-| Embeddings | Tied input/output | Halves embedding param count |
-| Shape | Deep & narrow | More layers with fewer dims beats the reverse at small scale |
+**Multi-stage pipelines:**
+- Curriculum learning (short sequences → long)
+- Multi-dataset training (TinyStories → MiniPile → OpenWebText)
+- Supervised fine-tuning (SFT) stage with UltraChat
 
-## Training Strategy
+## Evaluation
 
-- **Tokenizer:** Small BPE vocabulary trained on our data. Smaller vocab = more parameter budget for the model itself.
-- **Curriculum learning:** Easy examples first, progressively harder. Accelerates convergence.
-- **Knowledge distillation:** Compress knowledge from a large teacher model into our tiny student.
-- **Cosine annealing with warmup:** Standard LR schedule, tuned for our scale.
-- **Mixed precision on MPS:** fp16/bf16 where possible for speed without sacrificing stability.
-- **Gradient accumulation:** Simulate larger batch sizes on limited hardware.
-- **Aggressive regularization:** Weight decay, dropout, gradient clipping — preventing overfit on small data.
+- **Built-in tasks:** perplexity, BLiMP grammar probes, LAMBADA, generation quality, state tracking
+- **lm-evaluation-harness:** HellaSwag, ARC, WinoGrande, PIQA, BoolQ, MMLU, TruthfulQA, GSM8K
+- **Compare** trained checkpoints against HF reference models (SmolLM-135M, Qwen2.5-0.5B)
 
-## Hardware Target
+## Dashboard
 
-Designed to train on a single Apple Silicon Mac:
+React + TypeScript web UI with:
+- Real-time training metrics via WebSocket (loss, LR, grad norm, tokens/sec)
+- Loss curves and evaluation results
+- Run management (start, stop, delete, compare)
+- Model evaluation with progress tracking
+- Chat/generation playground
+- Checkpoint weight inspection
 
-- Apple M-series chip (10 cores, MPS GPU)
-- 16 GB unified memory
-- ~3,800 GFLOPS via MPS (2.8x CPU speedup)
-- Tier: MEDIUM — comfortably trains models under 10M params
+## Quick Start
 
-No cloud required. No multi-GPU. Just your laptop.
+```bash
+# Setup
+git clone <repo-url>
+cd smallest-llm
+uv sync
+
+# Train a model
+uv run python main.py                              # default config
+uv run python main.py --preset mamba3-quick         # named preset
+uv run python main.py --preset mamba3-curriculum    # multi-stage training
+uv run python main.py --config configs/example.json # custom config
+uv run python main.py --optimizer.lr 1e-3           # CLI overrides
+
+# Dashboard
+uv run python scripts/serve.py   # backend (localhost:8000)
+cd dashboard && npm install && npm run dev  # frontend (localhost:5173)
+
+# Tests
+uv run pytest
+
+# Evaluate
+uv run python scripts/eval_harness.py  # lm-evaluation-harness benchmarks
+```
+
+## Presets
+
+Quick experiments:
+- `sanity-check` — overfit 1 batch, verify training works
+- `transformer-quick` / `mamba-quick` / `mamba3-quick` — 200 steps
+
+Standard training:
+- `mamba3-default` — 1K steps on MiniPile
+- `transformer-long` — 5K steps
+
+Multi-stage:
+- `mamba3-curriculum` — 4 stages, progressive sequence length (32→256)
+- `mamba3-multistage` — 4 stages across TinyStories → MiniPile → OpenWebText
+- `mamba3-sft` — pretrain + diversify + supervised fine-tuning
+
+Kitchen sink:
+- `improved-mamba3-100x` — Muon + Echo + Phantom + Hydra + Neuroplasticity + multi-stage + SFT
 
 ## Project Structure
 
 ```
 smallest-llm/
-├── main.py              # Entry point
-├── scripts/
-│   └── rate_infra.py    # Hardware benchmarking & capability rating
-├── pyproject.toml       # Dependencies (torch, psutil)
-└── README.md
+├── main.py                  # CLI entry point
+├── src/
+│   ├── config/              # Dataclass configs & presets
+│   ├── data/                # Dataset loading, tokenization, streaming
+│   ├── evaluation/          # Eval framework + lm-harness integration
+│   ├── models/              # Transformer, Mamba, Mamba-2, Mamba-3
+│   ├── training/            # Training loop, optimizers, checkpointing, pipelines
+│   ├── server/              # FastAPI + WebSocket backend
+│   ├── storage/             # SQLite persistence (metrics, checkpoints, evals)
+│   └── types/               # Shared type definitions
+├── dashboard/               # React + Vite + Jotai frontend
+├── configs/                 # JSON config files
+├── scripts/                 # Utility scripts (serve, eval, ablation)
+├── data/                    # Training data (Shakespeare, eval datasets)
+├── checkpoints/             # Saved model checkpoints
+└── tests/                   # pytest suite
 ```
 
-## Getting Started
+## Tech Stack
 
-```bash
-# Clone and setup
-git clone <repo-url>
-cd smallest-llm
-uv sync
+- **Python** + **uv** for package management
+- **PyTorch** (MPS backend for Apple Silicon)
+- **FastAPI** + **WebSockets** for the dashboard server
+- **React** + **TypeScript** + **Vite** + **Jotai** for the dashboard UI
+- **SQLite** for metrics, checkpoints, and eval results
+- **lm-eval** for standard benchmarks
 
-# Check what your hardware can handle
-uv run python scripts/rate_infra.py
-```
+## Hardware
 
-## Status
-
-Early stage. Infrastructure and architecture are being built out. The foundation comes first — training loops, config management, logging, checkpointing — then the model.
+Designed for Apple Silicon MacBooks. No cloud, no multi-GPU — just your laptop.
 
 ## License
 

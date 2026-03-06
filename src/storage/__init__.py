@@ -1,7 +1,9 @@
-"""Persistent storage for runs, metrics, and eval results."""
+"""Persistent storage for runs, metrics, checkpoints, models, and eval results."""
 
-from src.storage.checkpoint_db import CheckpointDatabase
-from src.storage.database import Database
-from src.storage.eval_db import EvalDatabase
+from src.storage.impl.main import MainDatabase
+from src.storage.impl.eval import EvalDatabase
 
-__all__ = ["CheckpointDatabase", "Database", "EvalDatabase"]
+# Backwards-compatible alias
+Database = MainDatabase
+
+__all__ = ["Database", "MainDatabase", "EvalDatabase"]

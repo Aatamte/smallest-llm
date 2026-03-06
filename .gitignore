@@ -30,4 +30,18 @@ Thumbs.db
 # Training artifacts
 checkpoints/
 logs/
-data/
+/data/
+
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
+
+# Saved models
+models/
+
+# Eval results
+eval_results/
+
+# Pytest
+.pytest_cache/

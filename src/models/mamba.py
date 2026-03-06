@@ -183,4 +183,4 @@ class TinyMamba(BaseModel):
         if labels is not None:
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), labels.view(-1))
 
-        return ModelOutput(loss=loss, logits=logits)
+        return ModelOutput(loss=loss, logits=logits, hidden_states=x)

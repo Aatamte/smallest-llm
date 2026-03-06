@@ -11,6 +11,7 @@ import { LogContainer } from "./containers/LogContainer";
 import { ModelsContainer } from "./containers/ModelsContainer";
 import { EvalContainer } from "./containers/EvalContainer";
 import { ChatContainer } from "./containers/ChatContainer";
+import { TablesPage } from "./components/TablesPage";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useHashRouter } from "./hooks/useHashRouter";
 import { CHART_COLORS } from "./types/chart";
@@ -52,6 +53,7 @@ export default function App() {
       {page === "models" && <ModelsContainer />}
       {page === "eval" && <EvalContainer />}
       {page === "chat" && <ChatContainer />}
+      {page === "tables" && <TablesPage />}
       {page === "logs" && <LogContainer />}
     </Layout>
   );

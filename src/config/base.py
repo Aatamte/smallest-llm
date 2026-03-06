@@ -6,7 +6,7 @@ import json
 from dataclasses import asdict, dataclass, field, fields
 from typing import Any
 
-from src.evaluation.config import EvalConfig
+from src.evaluation.config import EvalConfig, STANDARD_EVAL_TASKS
 
 
 @dataclass
@@ -49,13 +49,38 @@ class SchedulerConfig:
 
 @dataclass
 class TrainingConfig:
-    max_steps: int = 1_000
+    max_steps: int = 1_000  # 0 = auto (derive from max_flops)
+    max_flops: float | None = None  # FLOPs budget; when set, training stops at this budget
     eval_interval: int = 100
     log_interval: int = 5
     save_interval: int = 200
     gradient_accumulation_steps: int = 1
     mixed_precision: bool = False
     compile_model: bool = False
+    echo_loss: bool = False
+    phantom_batches: bool = False
+    phantom_n: int = 5
+    phantom_weight: float = 0.1
+    hydra: bool = False
+    hydra_micro_seq_len: int = 16
+    hydra_micro_batch: int = 128
+    hydra_macro_seq_len: int = 512
+    hydra_macro_batch: int = 4
+    hydra_micro_weight: float = 0.3
+    hydra_macro_weight: float = 0.1
+    neuroplasticity: bool = False
+    state_anchor: bool = False
+    state_anchor_weight: float = 0.1
+    state_anchor_distances: str = "4,8,16"  # comma-separated ints
+    grad_sharpen: bool = False
+    grad_sharpen_keep: float = 0.1  # keep top 10%
+    multi_token: bool = False
+    multi_token_n_ahead: int = 4
+    multi_token_weights: str = "1.0,0.5,0.25,0.125"
+    eval_tasks: bool = True  # run eval tasks during training
+    eval_tasks_interval: int = 2000  # run evals every N steps
+    eval_tasks_list: str = STANDARD_EVAL_TASKS  # comma-separated task names
+    eval_tasks_max_samples: int = 500  # cap samples per task for speed (0 = all)
 
 
 @dataclass
@@ -80,6 +105,44 @@ class MonitoringConfig:
 
 
 @dataclass
+class StageConfig:
+    """Per-stage overrides for multi-stage training pipelines.
+
+    Only non-None fields override the base ExperimentConfig.
+    max_steps is the number of steps IN this stage (not global).
+    max_flops overrides max_steps when set — stage ends at that FLOPs budget.
+    """
+    name: str = "default"
+    max_steps: int = 100  # 0 = auto (derive from max_flops)
+    max_flops: float | None = None
+
+    # Data overrides
+    seq_len: int | None = None
+    batch_size: int | None = None
+
+    # LR / scheduler overrides
+    lr: float | None = None
+    min_lr_ratio: float | None = None
+    warmup_steps: int = 0
+
+    # Training overrides
+    eval_interval: int | None = None
+    log_interval: int | None = None
+    save_interval: int | None = None
+
+    # Dataset override (None = use base config dataset)
+    dataset_name: str | None = None
+
+    # Stage type: "pretrain" for standard next-token prediction, "sft" for chat fine-tuning
+    stage_type: str = "pretrain"
+
+    # Sanity check
+    overfit_batches: int = 0
+    loss_threshold: float | None = None
+    eval_enabled: bool = True
+
+
+@dataclass
 class ExperimentConfig:
     """Top-level config that composes everything."""
     name: str = "default"
@@ -95,6 +158,7 @@ class ExperimentConfig:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     monitoring: MonitoringConfig = field(default_factory=MonitoringConfig)
     eval: EvalConfig = field(default_factory=EvalConfig)
+    stages: list[StageConfig] | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -120,7 +184,9 @@ class ExperimentConfig:
         kwargs = {}
         for f in fields(cls):
             if f.name in d:
-                if f.name in nested_types:
+                if f.name == "stages" and d[f.name] is not None:
+                    kwargs[f.name] = [StageConfig(**s) for s in d[f.name]]
+                elif f.name in nested_types:
                     kwargs[f.name] = nested_types[f.name](**d[f.name])
                 else:
                     kwargs[f.name] = d[f.name]
